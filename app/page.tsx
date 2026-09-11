@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 type Choice = { text: string; trust: number; tension: number; response: string; memory: string; next: string };
 type Scene = { title: string; subtitle: string; line: string; detail: string; choices: Choice[] };
-type Save = { started: boolean; scene: number; trust: number; tension: number; memories: string[] };
+type Save = { started: boolean; scene: number; trust: number; tension: number; memories: string[]; ending?: boolean };
 
 const SAVE_KEY = 'between-us-save-v1';
 
@@ -27,7 +27,7 @@ const scenes: Scene[] = [
 ];
 
 export default function Home() {
-  const [started, setStarted] = useState(false), [scene, setScene] = useState(0), [choice, setChoice] = useState<Choice | null>(null), [trust, setTrust] = useState(0), [tension, setTension] = useState(0), [memories, setMemories] = useState<string[]>([]), [mounted, setMounted] = useState(false);
+  const [started, setStarted] = useState(false), [scene, setScene] = useState(0), [choice, setChoice] = useState<Choice | null>(null), [trust, setTrust] = useState(0), [tension, setTension] = useState(0), [memories, setMemories] = useState<string[]>([]), [ending, setEnding] = useState(false), [mounted, setMounted] = useState(false);
   const audio = useRef<AudioContext | null>(null), current = scenes[scene];
 
   function sound(kind: 'tap' | 'warm' | 'low') {
@@ -45,27 +45,33 @@ export default function Home() {
   }
   function continueStory() {
     sound('warm');
-    if (scene < scenes.length - 1) { const nextScene = scene + 1; setScene(nextScene); setChoice(null); save({ started: true, scene: nextScene, trust, tension, memories }); }
+    if (scene < scenes.length - 1) {
+      const nextScene = scene + 1; setScene(nextScene); setChoice(null); save({ started: true, scene: nextScene, trust, tension, memories });
+    } else {
+      setEnding(true); save({ started: true, scene, trust, tension, memories, ending: true });
+    }
   }
   function startFresh() {
-    localStorage.removeItem(SAVE_KEY); setStarted(true); setScene(0); setChoice(null); setTrust(0); setTension(0); setMemories([]); sound('warm');
+    localStorage.removeItem(SAVE_KEY); setStarted(true); setScene(0); setChoice(null); setTrust(0); setTension(0); setMemories([]); setEnding(false); sound('warm');
   }
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
-      if (raw) { const saved = JSON.parse(raw) as Save; setStarted(Boolean(saved.started)); setScene(Math.min(Math.max(saved.scene ?? 0, 0), scenes.length - 1)); setTrust(saved.trust ?? 0); setTension(saved.tension ?? 0); setMemories(Array.isArray(saved.memories) ? saved.memories : []); }
+      if (raw) { const saved = JSON.parse(raw) as Save; setStarted(Boolean(saved.started)); setScene(Math.min(Math.max(saved.scene ?? 0, 0), scenes.length - 1)); setTrust(saved.trust ?? 0); setTension(saved.tension ?? 0); setMemories(Array.isArray(saved.memories) ? saved.memories : []); setEnding(Boolean(saved.ending)); }
     } catch {}
     setMounted(true);
     return () => { void audio.current?.close(); };
   }, []);
 
   if (!mounted) return <main className="stage"><div className="grain"/></main>;
+  if (ending) return <main className={`stage mood-${tension > trust ? 'tense' : trust > tension ? 'warm' : 'neutral'}`}><div className="grain"/><div className="ambient"/><section className="intro ending"><div className="eyebrow">BETWEEN US · ПОСЛЕДНЯЯ СТРАНИЦА</div><h1>Ты не изменил<br/><em>её прошлое.</em><br/>Ты изменил то,<br/>что она решилась рассказать.</h1><p>{trust >= 4 ? 'Она запомнит тебя как человека, рядом с которым можно не прятаться.' : tension >= 4 ? 'Она запомнит этот разговор. Но, возможно, ещё не решит, можно ли тебе доверять.' : 'Она не скажет вслух, что почувствовала. Но твой выбор останется в её памяти.'}</p><div className="ending-meta"><span>ВОСПОМИНАНИЙ · {memories.length.toString().padStart(2, '0')}</span><span>ДОВЕРИЕ · {trust > 0 ? '+' : ''}{trust}</span><span>НАПРЯЖЕНИЕ · {tension > 0 ? '+' : ''}{tension}</span></div><button className="primary" onClick={startFresh}>Прожить историю заново <span>↻</span></button></section></main>;
+
   return <main className={`stage mood-${tension > trust ? 'tense' : trust > tension ? 'warm' : 'neutral'}`}><div className="grain"/><div className="ambient"/>
     {!started ? <section className="intro"><div className="eyebrow">BETWEEN US · INTERACTIVE STORY</div><h1>Иногда человеку<br/><em>нужно не решение.</em><br/>А чтобы кто-то остался.</h1><p>Это история о доверии. Здесь нет правильных ответов. Твои действия меняют не только разговор — они меняют то, каким тебя запомнит другой человек.</p><button className="primary" onClick={() => { sound('warm'); setStarted(true); save({ started: true, scene: 0, trust: 0, tension: 0, memories: [] }); }}>Начать историю <span>→</span></button></section> : <section className="story">
       <header><span>{current.title}</span><span>{current.subtitle}</span><span>ПАМЯТЬ {memories.length.toString().padStart(2, '0')}</span></header>
       <div className="scene"><div className="character" aria-label="Мира"><div className="halo"/><div className="face"/><div className="pulse"/></div><div className="copy"><div className="name">МИРА <span>•</span> она ещё не знает, что ты запомнишь</div>{!choice ? <><h2>{current.line}</h2><p>{current.detail}</p></> : <><div className="reaction">РЕАКЦИЯ МИРЫ</div><h2>{choice.response}</h2><p className="memory">ПАМЯТЬ СОХРАНЕНА · {choice.memory}</p><p className="next-line">{choice.next}</p></>}</div></div>
-      {!choice ? <div className="choices">{current.choices.map((c, i) => <button key={c.text} onClick={() => choose(c)}><span>0{i + 1}</span>{c.text}<b>↗</b></button>)}</div> : <div className="after"><div className="meters"><span>доверие {trust > 0 ? '+' : ''}{trust}</span><span>напряжение {tension > 0 ? '+' : ''}{tension}</span></div><button className="primary" onClick={continueStory}>{scene < scenes.length - 1 ? 'Следующая сцена' : 'Глава завершена'} <span>→</span></button></div>}
+      {!choice ? <div className="choices">{current.choices.map((c, i) => <button key={c.text} onClick={() => choose(c)}><span>0{i + 1}</span>{c.text}<b>↗</b></button>)}</div> : <div className="after"><div className="meters"><span>доверие {trust > 0 ? '+' : ''}{trust}</span><span>напряжение {tension > 0 ? '+' : ''}{tension}</span></div><button className="primary" onClick={continueStory}>{scene < scenes.length - 1 ? 'Следующая сцена' : 'Узнать, чем всё закончилось'} <span>→</span></button></div>}
       {memories.length > 0 && <aside className="memory-drawer"><span>ЕЁ ПАМЯТЬ</span><strong>{memories[memories.length - 1]}</strong></aside>}
       {scene > 0 && !choice && <button className="reset" onClick={startFresh}>Начать заново</button>}
     </section>}
