@@ -59,6 +59,9 @@ const RUN_COUNT_KEY = 'between-us-run-count-v1';
 const LAST_RUN_KEY = 'between-us-last-run-v1';
 const REPLAY_MEMORY_PATCH_V1 = true;
 const REPLAY_BRANCH_PATCH_V1 = true;
+const PRODUCT_ENDINGS_V1 = true;
+const REPLAY_SAVE_FIX_V1 = true;
+const DEEP_CONSEQUENCES_V1 = true;
 const CHAPTER_ONE_ID = 'chapter-01-window';
 
 const chapters: Chapter[] = [{
@@ -185,6 +188,57 @@ function personalizeReplayScene(scene: Scene | undefined, previousChoices: Recor
   const first = previousChoices['scene-01-window'];
   const second = previousChoices['scene-02-after'];
   const fifth = previousChoices['scene-05-test'];
+
+
+  // Deep consequences: several first-run choices combine into a new replay state.
+  // These checks intentionally run before the older replay branches so they can reroute scenes.
+  const third = previousChoices['scene-03-photograph'];
+  const fourth = previousChoices['scene-04-name'];
+  const chosePresence = first === 'scene-01-window-choice-01';
+  const choseCuriosity = second === 'scene-02-after-choice-02';
+  const protectedHerPast = third === 'scene-03-photograph-choice-01';
+  const gavePermission = fourth === 'scene-04-name-choice-01';
+  const admittedFear = fifth === 'scene-05-test-choice-02';
+
+  if (scene.id === 'replay-03-door' && choseCuriosity && protectedHerPast) {
+    return {
+      ...scene,
+      nextSceneId: 'replay-04-confession',
+      line: 'Мира открывает дверь раньше, чем ты успеваешь постучать.',
+      detail: 'В первый раз ты спросил, но не стал присваивать её прошлое. Во второй она сама решает, сколько тебе показать — и встречает тебя раньше, чем ты попросишь.'
+    };
+  }
+
+  if (scene.id === 'replay-04-confession' && gavePermission && protectedHerPast) {
+    return {
+      ...scene,
+      nextSceneId: 'replay-05-choice',
+      line: '«Ты помнишь, что тогда сказал мне не рассказывать?» — спрашивает Мира. «Я запомнила именно это».',
+      detail: 'Твоя первая граница стала для неё доказательством безопасности. Поэтому во второй раз признание начинается не с проверки, а с доверия.'
+    };
+  }
+
+  if (scene.id === 'replay-05-choice' && chosePresence && admittedFear) {
+    return {
+      ...scene,
+      line: '«В первый раз ты остался. Потом впервые сказал, что тебе тоже страшно».',
+      detail: 'Эти два решения больше не существуют отдельно. Мира больше не просит доказать близость — она предлагает выбрать её вместе.',
+      choices: scene.choices.map((choice, index) => index === 0
+        ? { ...choice, text: '«Давай не будем делать вид, что нам не страшно».', trust: choice.trust + 1, response: 'Она кивает. «Тогда впервые попробуем честно».', memory: 'Вы назвали страх общим, а не чужим.' }
+        : choice)
+    };
+  }
+
+  if (scene.id === 'replay-06-morning' && choseCuriosity && !admittedFear) {
+    return {
+      ...scene,
+      line: 'Утром Мира оставляет тебе голосовое сообщение — впервые.',
+      detail: 'В первый раз ты заставил её назвать желание остаться. Во второй она сама делает следующий шаг, но оставляет тебе право решить, что будет дальше.',
+      choices: scene.choices.map((choice, index) => index === 1
+        ? { ...choice, text: 'Ответить голосовым: «Я услышал тебя».', trust: choice.trust + 1, response: 'После паузы приходит короткое: «Тогда сегодня не уходи первым».', memory: 'Ты ответил не объяснением, а присутствием.' }
+        : choice)
+    };
+  }
 
   if (scene.id === 'replay-01-return') {
     if (first === 'scene-01-window-choice-03') {
@@ -382,7 +436,9 @@ export default function Home() {
     sound('warm');
     startAmbient();
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 3, chapterId: CHAPTER_ONE_ID, sceneId: nextRun > 1 ? replayScenes[0].id : chapters[0].scenes[0].id, choices: {}, trust: 0, tension: 0, memories: [], ending: false, runNumber: nextRun } satisfies SaveV3));
+      const replayPreviousChoices: Record<string, string> = nextRun > 1 ? (() => { try { const raw = localStorage.getItem(LAST_RUN_KEY); return raw ? ((JSON.parse(raw) as SaveV3).choices ?? {}) : {}; } catch { return {}; } })() : {};
+
+localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 3, chapterId: CHAPTER_ONE_ID, sceneId: nextRun > 1 ? replayScenes[0].id : chapters[0].scenes[0].id, choices: {}, trust: 0, tension: 0, memories: [], ending: false, runNumber: nextRun, previousChoices: replayPreviousChoices } satisfies SaveV3));
     } catch {}
   }
 
@@ -462,30 +518,57 @@ export default function Home() {
   if (!mounted) return <main className="stage"><div className="grain" /></main>;
 
   if (ending) {
-    const endingText = trust >= 8
-      ? 'Она запомнит тебя не как человека, который её спас. А как человека, рядом с которым ей не пришлось притворяться.'
-      : trust >= 4
-        ? 'Она не забудет эту ночь. Возможно, потому что впервые смогла рассказать свою историю и остаться собой.'
-        : tension >= 5
-          ? 'Она запомнит разговор. Но некоторые двери открываются только тогда, когда перестаёшь торопиться их открыть.'
-          : 'Она не скажет вслух, что почувствовала. Но твой выбор останется в её памяти.';
-    const endingLabel = trust >= 8 ? 'БЛИЗОСТЬ' : trust >= 4 ? 'ДОВЕРИЕ' : tension >= 5 ? 'ДИСТАНЦИЯ' : 'НЕОПРЕДЕЛЁННОСТЬ';
-    const replayText = runNumber > 1 ? 'Прожить иначе · снова' : 'Прожить иначе';
+    const first = previousChoices;
+    const replay = runNumber > 1;
+    const firstWasOpen = first['scene-04-name'] === 'scene-04-name-choice-01' || first['scene-04-name'] === 'scene-04-name-choice-02';
+    const firstWasSilent = first['scene-02-after'] === 'scene-02-after-choice-03' || first['scene-05-test'] === 'scene-05-test-choice-03';
+    const replayChoseHonesty = choices['replay-05-choice'] === 'replay-05-choice-02';
+    const replayChoseDistance = choices['replay-05-choice'] === 'replay-05-choice-03';
+    let endingTitle = 'НЕОПРЕДЕЛЁННОСТЬ';
+    let endingText = 'Не каждая встреча заканчивается ответом. Иногда человек остаётся в памяти именно вопросом.';
+    let endingLabel = 'НЕОПРЕДЕЛЁННОСТЬ';
+    if (replay && replayChoseHonesty && firstWasOpen) {
+      endingTitle = 'ВЫ ВЫБРАЛИ ДРУГ ДРУГА';
+      endingText = 'В первый раз вы оба оставили важное между строк. Во второй — ты уже знал, где была спрятана правда, и выбрал не проходить мимо.';
+      endingLabel = 'ВСТРЕЧА';
+    } else if (replay && replayChoseDistance && firstWasSilent) {
+      endingTitle = 'НАУЧИТЬСЯ ОТПУСКАТЬ';
+      endingText = 'Память вернула тебя к той же двери не для того, чтобы ты вошёл. А чтобы ты наконец понял: близость без свободы тоже может быть одиночеством.';
+      endingLabel = 'СВОБОДА';
+    } else if (trust >= 8 && tension < 4) {
+      endingTitle = 'БЛИЗОСТЬ';
+      endingText = 'Она запомнит тебя не как человека, который её спас. А как человека, рядом с которым ей не пришлось притворяться.';
+      endingLabel = 'БЛИЗОСТЬ';
+    } else if (trust >= 4) {
+      endingTitle = 'ДОВЕРИЕ';
+      endingText = 'Она не забудет эту ночь. Возможно, потому что впервые смогла рассказать свою историю и остаться собой.';
+      endingLabel = 'ДОВЕРИЕ';
+    } else if (tension >= 5) {
+      endingTitle = 'ДИСТАНЦИЯ';
+      endingText = 'Она запомнит разговор. Но некоторые двери открываются только тогда, когда перестаёшь торопиться их открыть.';
+      endingLabel = 'ДИСТАНЦИЯ';
+    } else if (firstWasSilent) {
+      endingTitle = 'НЕСКАЗАННОЕ';
+      endingText = 'Ты оставил часть себя за дверью. Теперь ты знаешь, что молчание тоже становится выбором — и у него есть последствия.';
+      endingLabel = 'НЕСКАЗАННОЕ';
+    }
+    const replayText = replay ? 'Прожить иначе · снова' : 'Прожить иначе';
     return <main className={`stage mood-${tension > trust ? 'tense' : trust > tension ? 'warm' : 'neutral'}`}>
       <div className="grain" /><div className="ambient" />
       <section className="intro ending">
         <div className="eyebrow">BETWEEN US · ПОСЛЕДНЯЯ СТРАНИЦА</div>
-        <h1>{runNumber > 1 ? <>Ты не вернулся<br /><em>в прошлое.</em><br />Ты открыл то,<br />чего не было в первый раз.</> : <>Ты не изменил<br /><em>её прошлое.</em><br />Ты изменил то,<br />что она решилась рассказать.</>}</h1>
+        <h1>{replay ? <>ВТОРОЙ РАЗ<br /><em>НЕ ПОВТОРЯЕТ</em><br />ПЕРВЫЙ.</> : <>ТЫ НЕ ИЗМЕНИЛ<br /><em>ЕЁ ПРОШЛОЕ.</em><br />ТЫ ИЗМЕНИЛ<br />ЭТУ НОЧЬ.</>}</h1>
         <p>{endingText}</p>
         <div className="ending-meta">
           <span>ВОСПОМИНАНИЙ · {memories.length.toString().padStart(2, '0')}</span>
           <span>ТВОЙ СЛЕД · {endingLabel}</span>
-          {runNumber > 1 && <span>ПРОХОЖДЕНИЕ · {runNumber}</span>}
+          {replay && <span>ПРОХОЖДЕНИЕ · {runNumber}</span>}
         </div>
         <div className="ending-actions">
           <button className="primary" onClick={startFresh}>{replayText} <span>↻</span></button>
           <button className="ghost" onClick={shareStory}>{sharing ? 'Скопировано' : 'Поделиться историей ↗'}</button>
         </div>
+        <div className="ending-after">{endingTitle} · Твой выбор имеет продолжение.</div>
       </section>
     </main>;
   }
