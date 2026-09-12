@@ -41,6 +41,7 @@ type SaveV3 = {
   memories: string[];
   ending?: boolean;
   runNumber?: number;
+  previousChoices?: Record<string, string>;
 };
 
 type LegacySaveV2 = {
@@ -56,6 +57,7 @@ const SAVE_KEY = 'between-us-save-v3';
 const LEGACY_SAVE_KEY = 'between-us-save-v2';
 const RUN_COUNT_KEY = 'between-us-run-count-v1';
 const LAST_RUN_KEY = 'between-us-last-run-v1';
+const REPLAY_MEMORY_PATCH_V1 = true;
 const CHAPTER_ONE_ID = 'chapter-01-window';
 
 const chapters: Chapter[] = [{
@@ -177,6 +179,40 @@ const replayScenes: Scene[] = [
 
 function findReplayScene(sceneId: string) { return replayScenes.find((scene) => scene.id === sceneId); }
 
+function personalizeReplayScene(scene: Scene | undefined, previousChoices: Record<string, string>): Scene | undefined {
+  if (!scene) return undefined;
+  const first = previousChoices['scene-01-window'];
+  const second = previousChoices['scene-02-after'];
+  const fifth = previousChoices['scene-05-test'];
+
+  if (scene.id === 'replay-01-return') {
+    if (first === 'scene-01-window-choice-03') {
+      return { ...scene, nextSceneId: 'replay-03-door', line: '«В прошлый раз ты ушёл. Я помню».', detail: 'На этот раз Мира не ждёт сообщения. Она открывает дверь сама — потому что помнит твоё отсутствие.' };
+    }
+    if (first === 'scene-01-window-choice-02') {
+      return { ...scene, line: '«Ты снова хочешь понять, что со мной происходит?»', detail: 'Она помнит твой вопрос из первой ночи. Теперь ей интересно, задашь ли ты его снова.' };
+    }
+    return { ...scene, line: '«Ты остался. Я помню это».', detail: 'Первое решение не исчезло. Оно изменило то, с чего Мира начинает этот вечер.' };
+  }
+
+  if (scene.id === 'replay-02-memory') {
+    if (second === 'scene-02-after-choice-03') {
+      return { ...scene, line: '«В прошлый раз ты ничего не ответил».', detail: 'Твоё молчание стало частью её памяти. Теперь она не оставляет эту паузу без последствий.' };
+    }
+    if (second === 'scene-02-after-choice-02') {
+      return { ...scene, line: '«В прошлый раз ты спросил, хотела ли я, чтобы ты остался».', detail: 'Она помнит, как ты заставил её назвать желание. Теперь она сама начинает разговор.' };
+    }
+    return { ...scene, line: '«После той ночи я перечитывала твои слова».', detail: 'То, что ты сказал раньше, стало для неё точкой отсчёта.' };
+  }
+
+  if (scene.id === 'replay-05-choice' && fifth === 'scene-05-test-choice-02') {
+    return { ...scene, line: '«В первый раз ты тоже признался, что тебе было страшно».', detail: 'Мира помнит твою уязвимость. Поэтому сегодня она не проверяет тебя — она отвечает взаимностью.' };
+  }
+
+  return scene;
+}
+
+
 const chapterById = new Map(chapters.map((chapter) => [chapter.id, chapter]));
 
 function findScene(chapterId: string, sceneId: string) {
@@ -195,10 +231,12 @@ export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [runNumber, setRunNumber] = useState(1);
+  const [previousChoices, setPreviousChoices] = useState<Record<string, string>>({});
   const audio = useRef<AudioContext | null>(null);
   const ambient = useRef<OscillatorNode | null>(null);
   const chapter = chapterById.get(chapterId) ?? chapters[0];
-  const current = (runNumber > 1 ? findReplayScene(sceneId) : findScene(chapter.id, sceneId)) ?? (runNumber > 1 ? replayScenes[0] : chapter.scenes[0]);
+  const replayBase = runNumber > 1 ? findReplayScene(sceneId) : undefined;
+  const current = (runNumber > 1 ? personalizeReplayScene(replayBase, previousChoices) : findScene(chapter.id, sceneId)) ?? (runNumber > 1 ? replayScenes[0] : chapter.scenes[0]);
   const selectedChoice = current.choices.find((choice) => choice.id === choices[current.id]);
   const sceneNumber = runNumber > 1 ? replayScenes.findIndex((scene) => scene.id === current.id) + 1 : chapter.scenes.findIndex((scene) => scene.id === current.id) + 1;
 
@@ -249,6 +287,7 @@ export default function Home() {
       memories,
       ending,
       runNumber,
+      previousChoices,
       ...next,
     };
   }
@@ -301,6 +340,14 @@ export default function Home() {
       const hasPreviousRun = Boolean(previous) || stored > 0 || started || ending;
       nextRun = hasPreviousRun ? Math.max(runNumber, stored) + 1 : 1;
       localStorage.setItem(RUN_COUNT_KEY, String(nextRun));
+      let replayPreviousChoices: Record<string, string> = {};
+      if (nextRun > 1) {
+        try {
+          const parsed = previous ? JSON.parse(previous) as Partial<SaveV3> : undefined;
+          replayPreviousChoices = parsed?.choices && typeof parsed.choices === 'object' ? parsed.choices : {};
+        } catch {}
+      }
+      setPreviousChoices(replayPreviousChoices);
       localStorage.removeItem(SAVE_KEY);
     } catch {}
     setRunNumber(nextRun);
@@ -347,6 +394,7 @@ export default function Home() {
           setTension(saved.tension ?? 0);
           setMemories(Array.isArray(saved.memories) ? saved.memories : []);
           setEnding(Boolean(saved.ending));
+          setPreviousChoices(saved.previousChoices && typeof saved.previousChoices === 'object' ? saved.previousChoices : {});
           if (saved.runNumber && saved.runNumber > 0) setRunNumber(saved.runNumber);
         }
       } else {
