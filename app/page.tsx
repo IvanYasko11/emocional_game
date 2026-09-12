@@ -385,6 +385,7 @@ export default function Home() {
   const [sharing, setSharing] = useState(false);
   const [runNumber, setRunNumber] = useState(1);
   const [previousChoices, setPreviousChoices] = useState<Record<string, string>>({});
+  const [miraDirective, setMiraDirective] = useState<{ sourceSceneId: string; nextSceneId: string; text: string } | null>(null);
   const audio = useRef<AudioContext | null>(null);
   const ambient = useRef<OscillatorNode | null>(null);
   const chapter = chapterById.get(chapterId) ?? chapters[0];
@@ -475,8 +476,13 @@ export default function Home() {
 
   function continueStory() {
     sound('warm');
-    if (current.nextSceneId) {
-      const nextScene = runNumber > 1 ? findReplayScene(current.nextSceneId) : findScene(chapter.id, current.nextSceneId);
+    const directedNextSceneId = miraDirective?.sourceSceneId === current.id ? miraDirective.nextSceneId : current.nextSceneId;
+    if (miraDirective?.sourceSceneId === current.id) {
+      setMiraDirective(null);
+      try { localStorage.removeItem('between-us-mira-directive-v1'); } catch {}
+    }
+    if (directedNextSceneId) {
+      const nextScene = runNumber > 1 ? findReplayScene(directedNextSceneId) : findScene(chapter.id, directedNextSceneId);
       if (nextScene) {
         setSceneId(nextScene.id);
         save(makeSave({ sceneId: nextScene.id }));
@@ -546,6 +552,19 @@ localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 3, chapterId: CHAPTER_O
 
   useEffect(() => {
     try {
+      const rawDirective = localStorage.getItem('between-us-mira-directive-v1');
+      if (rawDirective) {
+        const directive = JSON.parse(rawDirective);
+        if (directive?.sourceSceneId && directive?.nextSceneId && directive?.expiresAt > Date.now()) setMiraDirective({ sourceSceneId: directive.sourceSceneId, nextSceneId: directive.nextSceneId, text: directive.text || 'Мира изменила следующий шаг этой истории.' });
+        else localStorage.removeItem('between-us-mira-directive-v1');
+      }
+    } catch {}
+    function onMiraDirective(event: StorageEvent) {
+      if (event.key !== 'between-us-mira-directive-v1' || !event.newValue) return;
+      try { const d = JSON.parse(event.newValue); if (d?.sourceSceneId && d?.nextSceneId && d?.expiresAt > Date.now()) setMiraDirective({ sourceSceneId: d.sourceSceneId, nextSceneId: d.nextSceneId, text: d.text || 'Мира изменила следующий шаг этой истории.' }); } catch {}
+    }
+    window.addEventListener('storage', onMiraDirective);
+    try {
       const storedRun = Number(localStorage.getItem(RUN_COUNT_KEY) ?? '0');
       if (storedRun > 0) setRunNumber(storedRun);
       const raw = localStorage.getItem(SAVE_KEY);
@@ -602,6 +621,7 @@ localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 3, chapterId: CHAPTER_O
     } catch {}
     setMounted(true);
     return () => {
+      window.removeEventListener('storage', onMiraDirective);
       ambient.current?.stop();
       void audio.current?.close();
     };
@@ -683,7 +703,7 @@ localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 3, chapterId: CHAPTER_O
         <div className="copy">
           {replayHint && <div className="reaction">ТЫ УЖЕ БЫЛ ЗДЕСЬ</div>}
           <div className="name">МИРА <span>•</span> {replayHint ? 'в этот раз всё может сложиться иначе' : 'она ещё не знает, что ты запомнишь'}</div>
-          {!selectedChoice ? <><h2>{replayHint ? '«Некоторые ответы понимаешь только после того, как уже выбрал.»' : current.line}</h2><p>{replayHint ? 'Ты знаешь эту ночь. Но не знаешь, каким человеком станешь в ней во второй раз.' : current.detail}</p></> : <><div className="reaction">РЕАКЦИЯ МИРЫ</div><h2>{selectedChoice.response}</h2><p className="memory">ПАМЯТЬ СОХРАНЕНА · {selectedChoice.memory}</p><p className="next-line">{selectedChoice.next}</p>{selectedChoice.echo && <p className="echo">{selectedChoice.echo}</p>}</>}
+          {!selectedChoice ? <>{miraDirective?.sourceSceneId === current.id && <div className="reaction mira-directive">МИРА ИЗМЕНИЛА ХОД ИСТОРИИ · {miraDirective.text}</div>}<h2>{replayHint ? '«Некоторые ответы понимаешь только после того, как уже выбрал.»' : current.line}</h2><p>{replayHint ? 'Ты знаешь эту ночь. Но не знаешь, каким человеком станешь в ней во второй раз.' : current.detail}</p></> : <><div className="reaction">РЕАКЦИЯ МИРЫ</div><h2>{selectedChoice.response}</h2><p className="memory">ПАМЯТЬ СОХРАНЕНА · {selectedChoice.memory}</p><p className="next-line">{selectedChoice.next}</p>{selectedChoice.echo && <p className="echo">{selectedChoice.echo}</p>}</>}
         </div>
       </div>
       {!selectedChoice ? <div className="choices">{current.choices.map((c, i) => <button key={c.id} onClick={() => choose(c)}><span>0{i + 1}</span>{c.text}<b>↗</b></button>)}</div> : <div className="after"><div className="meters"><span>сцена {sceneNumber} / {chapter.scenes.length}</span><span>выбор сохранён</span></div><button className="primary" onClick={continueStory}>{current.nextSceneId || current.nextChapterId || chapter.nextChapterId ? 'Продолжить' : 'Открыть последнее воспоминание'} <span>→</span></button></div>}

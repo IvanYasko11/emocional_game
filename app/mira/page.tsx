@@ -63,6 +63,50 @@ export default function MiraPage() {
     return () => window.removeEventListener('storage', onChoiceEvent);
   }, []);
 
+  useEffect(() => {
+    function onChoiceEvent(event: StorageEvent) {
+      if (event.key !== 'between-us-mira-choice-event-v1' || !event.newValue) return;
+      try {
+        const e = JSON.parse(event.newValue);
+        if (!e?.id || !e.choiceText) return;
+        const seen = localStorage.getItem('between-us-mira-last-choice-event-v1');
+        if (seen === e.id) return;
+        localStorage.setItem('between-us-mira-last-choice-event-v1', e.id);
+        const current = loadState();
+        const deltaTrust = Math.max(-1, Math.min(1, Number(e.trust || 0) * 0.25));
+        const deltaClose = Math.max(-1, Math.min(1, Number(e.trust || 0) * 0.35));
+        const deltaTension = Math.max(-1, Math.min(1, Number(e.tension || 0) * 0.3));
+        const next: MiraState = { ...current, trust: Math.max(-10, Math.min(10, current.trust + deltaTrust)), closeness: Math.max(-10, Math.min(10, current.closeness + deltaClose)), tension: Math.max(0, Math.min(10, current.tension + deltaTension)), memories: e.memory ? [...current.memories, { text: e.memory, createdAt: Date.now() }].slice(-30) : current.memories, mood: Number(e.tension || 0) >= 2 ? 'guarded' : Number(e.trust || 0) >= 2 ? 'warm' : current.mood };
+        persist(next);
+        const reply = Number(e.trust || 0) >= 2
+          ? `Я заметила твой выбор. Ты выбрал: «${e.choiceText}». Кажется, теперь я понимаю тебя чуть лучше.`
+          : Number(e.tension || 0) >= 2
+            ? `Я заметила твой выбор. Не уверена, что ожидала именно этого. Но я запомню.`
+            : `Я заметила твой выбор. Иногда то, что ты делаешь, говорит больше слов.`;
+        setChat(c => [...c, { role: 'mira', text: reply, event: true }]);
+        const item: PhoneMessage = { id: uid(), direction: 'mira', body: reply, kind: 'story-choice', createdAt: Date.now() };
+        const nextPhone = [...loadJson<PhoneMessage[]>(PHONE_KEY, []), item];
+        persistPhone(nextPhone);
+        void savePhone(nextPhone);
+        void saveRemote(next);
+
+        // Mira can occasionally change the route instead of merely commenting on it.
+        // The branch is deterministic and safe: only known story IDs can be targeted.
+        let directive: { sourceSceneId: string; nextSceneId: string; text: string } | null = null;
+        if (e.choiceId === 'scene-07-departure-choice-03') {
+          directive = { sourceSceneId: e.sceneId, nextSceneId: 'scene-09-truth', text: 'Мира передумала идти на крышу. «Сегодня я хочу сказать это сразу». Она ведёт тебя дальше — без промежуточной остановки.' };
+        } else if (e.choiceId === 'scene-08-rooftop-choice-02') {
+          directive = { sourceSceneId: e.sceneId, nextSceneId: 'scene-10-message', text: 'Запись, которую Мира хотела показать позже, уже не ждёт. После её рассказа следующий шаг приходит раньше, чем вы ожидали.' };
+        }
+        if (directive) {
+          localStorage.setItem('between-us-mira-directive-v1', JSON.stringify({ ...directive, createdAt: Date.now(), expiresAt: Date.now() + 30 * 60 * 1000 }));
+        }
+      } catch {}
+    }
+    window.addEventListener('storage', onChoiceEvent);
+    return () => window.removeEventListener('storage', onChoiceEvent);
+  }, []);
+
   const rel = useMemo(() => relationship(state), [state]); const moodLabel = { calm: 'спокойна', warm: 'теплеет', playful: 'играет', sad: 'грустит', curious: 'заинтересована', guarded: 'осторожна' }[state.mood]; const unread = phone.filter(m => m.direction === 'mira' && !m.readAt).length;
   async function send() { const text = input.trim(); if (!text || busy) return; setInput(''); setBusy(true); setChat(c => [...c, { role: 'user', text }]); const basePhone = loadJson<PhoneMessage[]>(PHONE_KEY, []), pm: PhoneMessage = { id: uid(), direction: 'player', body: text, kind: 'message', createdAt: Date.now() }, after = [...basePhone, pm]; persistPhone(after); void savePhone(after); try { const res = await fetch('/api/mira', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: text, state, history: chat.slice(-8), playerId: playerId() }) }); const data = await res.json(); const reply = data.reply || 'Я слушаю.'; setChat(c => [...c, { role: 'mira', text: reply }]); const afterReply = [...after, { id: uid(), direction: 'mira' as const, body: reply, kind: 'message', createdAt: Date.now() }]; persistPhone(afterReply); void savePhone(afterReply); const effects = data.effects || {}; persist({ ...state, trust: Math.max(-10, Math.min(10, state.trust + Number(effects.trustDelta || 0))), closeness: Math.max(-10, Math.min(10, state.closeness + Number(effects.closenessDelta || 0))), tension: Math.max(0, Math.min(10, state.tension + Number(effects.tensionDelta || 0))), mood: moods.includes(effects.mood) ? effects.mood : state.mood, memories: typeof data.memory === 'string' && data.memory.trim() ? [...state.memories, { text: data.memory.trim(), createdAt: Date.now() }].slice(-30) : state.memories }); void saveRemote(loadState()); } catch { setChat(c => [...c, { role: 'mira', text: 'Связь прервалась на секунду. Но разговор не потерян.' }]); } finally { setBusy(false); } }
   async function openPhone() { setPanel('phone'); const now = new Date().toISOString(); const next = phone.map(m => m.direction === 'mira' ? { ...m, readAt: m.readAt || now } : m); persistPhone(next); const { data: { session } } = await supabase.auth.getSession(); if (session?.user) await supabase.from('mira_phone_messages').update({ read_at: now }).eq('user_id', session.user.id).is('read_at', null); }
