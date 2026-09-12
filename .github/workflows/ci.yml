@@ -30,6 +30,9 @@ jobs:
       - name: Deepen consequences
         if: ${{ !contains(github.event.head_commit.message, '[replay-bot]') }}
         run: python3 scripts/deepen-consequences.py
+      - name: Expand story
+        if: ${{ !contains(github.event.head_commit.message, '[replay-bot]') }}
+        run: python3 scripts/expand-story.py
       - name: Fix replay save persistence
         if: ${{ !contains(github.event.head_commit.message, '[replay-bot]') }}
         run: python3 scripts/fix-replay-save.py
@@ -45,5 +48,5 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git add app/page.tsx
           git diff --cached --quiet && exit 0
-          git commit -m "feat: deepen replay consequences [replay-bot]"
+          git commit -m "feat: expand story arc [replay-bot]"
           git push
