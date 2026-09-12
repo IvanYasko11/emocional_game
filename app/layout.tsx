@@ -2,8 +2,27 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Between Us',
-  description: 'An emotional interactive story.',
+  title: 'BETWEEN US — интерактивная история',
+  description: 'История о доверии, выборе и том, что остаётся между людьми. 8 минут. Несколько разных последствий.',
+  applicationName: 'BETWEEN US',
+  keywords: ['BETWEEN US', 'интерактивная история', 'эмоциональная игра', 'interactive story'],
+  metadataBase: new URL('https://emotional-game.vercel.app'),
+  openGraph: {
+    title: 'BETWEEN US — иногда нужно, чтобы кто-то остался',
+    description: '8 минут. Несколько выборов. И история, которая помнит тебя.',
+    type: 'website',
+    locale: 'ru_RU',
+    siteName: 'BETWEEN US',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'BETWEEN US — интерактивная история',
+    description: 'История о доверии, выборе и том, что остаётся между людьми.',
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
