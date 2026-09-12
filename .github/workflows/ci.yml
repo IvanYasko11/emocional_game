@@ -24,14 +24,17 @@ jobs:
       - name: Upgrade replay memory
         if: ${{ !contains(github.event.head_commit.message, '[replay-bot]') }}
         run: python3 scripts/upgrade-replay-memory.py
+      - name: Upgrade replay branches
+        if: ${{ !contains(github.event.head_commit.message, '[replay-bot]') }}
+        run: python3 scripts/upgrade-replay-branches.py
       - name: Build
         run: npm run build
-      - name: Commit replay memory upgrade
+      - name: Commit replay upgrades
         if: ${{ !contains(github.event.head_commit.message, '[replay-bot]') }}
         run: |
           git config user.name "between-us-replay-bot"
           git config user.email "actions@users.noreply.github.com"
           git add app/page.tsx
           git diff --cached --quiet && exit 0
-          git commit -m "feat: make replay remember first-run choices [replay-bot]"
+          git commit -m "feat: add combination-based replay branches [replay-bot]"
           git push
