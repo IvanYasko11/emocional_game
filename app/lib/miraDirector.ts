@@ -1,8 +1,10 @@
+export type MiraMood = 'calm' | 'warm' | 'playful' | 'sad' | 'curious' | 'guarded';
+
 export type MiraDirectorInput = {
   trust: number;
   closeness: number;
   tension: number;
-  mood: string;
+  mood: MiraMood | string;
   choiceId?: string;
   sceneId?: string;
   replayCount?: number;
@@ -14,27 +16,37 @@ export type MiraDirective = {
   title: string;
   text: string;
   targetSceneId?: string;
+  targetChoiceId?: string;
 };
 
-// Safe narrative controller. It does not invent impossible branches.
-// It chooses among authored events using relationship state.
+// Narrative controller: chooses only authored, safe story interventions.
 export function chooseMiraDirective(input: MiraDirectorInput): MiraDirective | null {
-  if (input.tension >= 5) {
+  if (input.replayCount && input.replayCount > 0 && input.trust >= 4) {
     return {
-      type: 'send_message',
+      type: 'unlock_scene',
       priority: 10,
-      title: 'Мира осторожна',
-      text: 'Мира чувствует дистанцию. Следующий разговор станет важнее обычного.',
+      title: 'Мира помнит прошлое',
+      text: 'Она понимает, что вы уже были здесь раньше, и открывает скрытую память.',
+      targetSceneId: 'scene-hidden-memory',
     };
   }
 
-  if (input.closeness >= 6 && input.replayCount && input.replayCount > 1) {
+  if (input.tension >= 5) {
     return {
-      type: 'unlock_scene',
+      type: 'send_message',
       priority: 9,
-      title: 'Скрытая ветка',
-      text: 'Мира доверяет тебе достаточно, чтобы показать то, что скрывала раньше.',
-      targetSceneId: 'scene-hidden-memory',
+      title: 'Мира хочет поговорить',
+      text: 'Мира чувствует дистанцию и решает сказать то, что обычно держит внутри.',
+    };
+  }
+
+  if (input.closeness >= 6 && input.sceneId === 'scene-08-rooftop') {
+    return {
+      type: 'change_choice',
+      priority: 8,
+      title: 'Новый выбор открыт',
+      text: 'Высокая близость позволяет спросить Миру напрямую.',
+      targetChoiceId: 'ask_mira_truth',
     };
   }
 
@@ -42,8 +54,8 @@ export function chooseMiraDirective(input: MiraDirectorInput): MiraDirective | n
     return {
       type: 'memory_event',
       priority: 5,
-      title: 'Новое воспоминание',
-      text: 'Мира запомнила этот момент как важный для вас двоих.',
+      title: 'Важный момент',
+      text: 'Мира сохранила этот момент как часть вашей общей истории.',
     };
   }
 
