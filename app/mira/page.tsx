@@ -9,13 +9,14 @@ type MiraState = { trust: number; closeness: number; tension: number; memories: 
 type ChatMessage = { role: 'mira' | 'user'; text: string; event?: boolean };
 
 const KEY = 'between-us-mira-v1';
+const SAVE = 'between-us-save-v3';
 const PLAYER_KEY = 'between-us-player-id-v1';
 const LAST_SEEN_KEY = 'between-us-mira-last-seen-v1';
 const LAST_EVENT_KEY = 'between-us-mira-last-event-v1';
 const defaultState: MiraState = { trust: 0, closeness: 0, tension: 0, memories: [], firstName: 'ты', mood: 'calm' };
 const moods: Mood[] = ['calm', 'warm', 'playful', 'sad', 'curious', 'guarded'];
 
-function playerId() {
+function getPlayerId() {
   if (typeof window === 'undefined') return 'server';
   let id = localStorage.getItem(PLAYER_KEY);
   if (!id) {
@@ -29,22 +30,16 @@ function loadState(): MiraState {
   if (typeof window === 'undefined') return defaultState;
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
-    return { ...defaultState, ...(saved || {}), memories: Array.isArray(saved?.memories) ? saved.memories : [] };
-  } catch { return defaultState; }
-}
-
-function inferFromGame(): Partial<MiraState> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const game = JSON.parse(localStorage.getItem('between-us-save-v3') || 'null');
-    if (!game) return {};
+    const game = JSON.parse(localStorage.getItem(SAVE) || 'null');
+    if (saved && typeof saved === 'object') return { ...defaultState, ...saved, memories: Array.isArray(saved.memories) ? saved.memories : [] };
     return {
-      trust: Number(game.trust || 0),
-      closeness: Math.max(0, Number(game.trust || 0) * 2 - Number(game.tension || 0)),
-      tension: Number(game.tension || 0),
-      memories: Array.isArray(game.memories) ? game.memories.map((text: string) => ({ text, createdAt: Date.now() })) : [],
+      ...defaultState,
+      trust: Number(game?.trust || 0),
+      closeness: Math.max(0, Number(game?.trust || 0) * 2 - Number(game?.tension || 0)),
+      tension: Number(game?.tension || 0),
+      memories: Array.isArray(game?.memories) ? game.memories.map((text: string) => ({ text, createdAt: Date.now() })) : [],
     };
-  } catch { return {}; }
+  } catch { return defaultState; }
 }
 
 function relationshipOf(s: MiraState) {
@@ -59,38 +54,34 @@ export default function MiraPage() {
   const [eventBusy, setEventBusy] = useState(false);
 
   useEffect(() => {
-    const saved = loadState();
-    const game = inferFromGame();
-    const next = { ...saved, ...game, memories: game.memories?.length ? game.memories : saved.memories };
+    const next = loadState();
+    const id = getPlayerId();
     setState(next);
-    playerId();
     const lastSeen = Number(localStorage.getItem(LAST_SEEN_KEY) || 0);
     const hoursAway = lastSeen ? (Date.now() - lastSeen) / 36e5 : 0;
-    const opening = next.memories.length ? 'Ты вернулся. Я помню больше, чем в прошлый раз.' : 'Привет. Я Мира. Пока мы только знакомимся.';
-    setMessages([{ role: 'mira', text: opening }]);
+    setMessages([{ role: 'mira', text: next.memories.length ? 'Ты вернулся. Я помню больше, чем в прошлый раз.' : 'Привет. Я Мира. Пока мы только знакомимся.' }]);
 
-    // Mira can initiate a small in-game moment after a meaningful pause.
     const lastEvent = Number(localStorage.getItem(LAST_EVENT_KEY) || 0);
     if (lastSeen && hoursAway >= 0.5 && Date.now() - lastEvent >= 6 * 36e5) {
       setEventBusy(true);
       fetch('/api/mira/proactive', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ state: next, history: [], hoursAway, playerId: playerId() }),
+        body: JSON.stringify({ state: next, history: [], hoursAway, playerId: id }),
       }).then(r => r.json()).then(data => {
         const event = data?.event;
         if (!event?.reply) return;
         setMessages(m => [...m, { role: 'mira', text: event.reply, event: true }]);
         const memoryText = typeof event.memory === 'string' ? event.memory.trim() : '';
         const memories = memoryText ? [...next.memories, { text: memoryText, createdAt: Date.now() }].slice(-30) : next.memories;
-        const updated = {
+        const updated: MiraState = {
           ...next,
           trust: Math.max(-10, Math.min(10, next.trust + Number(event.trustDelta || 0))),
           closeness: Math.max(-10, Math.min(10, next.closeness + Number(event.closenessDelta || 0))),
           tension: Math.max(0, Math.min(10, next.tension + Number(event.tensionDelta || 0))),
           mood: moods.includes(event.mood) ? event.mood : next.mood,
           memories,
-        } as MiraState;
+        };
         setState(updated);
         localStorage.setItem(KEY, JSON.stringify(updated));
         localStorage.setItem(LAST_EVENT_KEY, String(Date.now()));
@@ -114,7 +105,7 @@ export default function MiraPage() {
       const res = await fetch('/api/mira', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ message: text, state, history: messages.slice(-8), playerId: playerId() }),
+        body: JSON.stringify({ message: text, state, history: messages.slice(-8), playerId: getPlayerId() }),
       });
       const data = await res.json();
       setMessages(m => [...m, { role: 'mira', text: data.reply || 'Я слушаю тебя.' }]);
