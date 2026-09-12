@@ -6,7 +6,6 @@ export const metadata: Metadata = {
   description: 'История о доверии, выборе и том, что остаётся между людьми. 8 минут. Несколько разных последствий.',
   applicationName: 'BETWEEN US',
   keywords: ['BETWEEN US', 'интерактивная история', 'эмоциональная игра', 'interactive story'],
-  metadataBase: new URL('https://emotional-game.vercel.app'),
   openGraph: {
     title: 'BETWEEN US — иногда нужно, чтобы кто-то остался',
     description: '8 минут. Несколько выборов. И история, которая помнит тебя.',
