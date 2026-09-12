@@ -1,6 +1,30 @@
 import { NextResponse } from 'next/server';
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+const moods = ['calm','warm','playful','sad','curious','guarded'] as const;
+
+function extractOutputText(data: any): string {
+  if (typeof data?.output_text === 'string' && data.output_text.trim()) return data.output_text.trim();
+  const parts = Array.isArray(data?.output)
+    ? data.output.flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+    : [];
+  return parts
+    .filter((part: any) => part?.type === 'output_text' && typeof part?.text === 'string')
+    .map((part: any) => part.text)
+    .join('\n')
+    .trim();
+}
+
+function parseJson(text: string): any | null {
+  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  try { return JSON.parse(cleaned); } catch {}
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(cleaned.slice(start, end + 1)); } catch {}
+  }
+  return null;
+}
 
 export async function POST(request: Request) {
   try {
@@ -46,22 +70,27 @@ ${recent}`;
     }
 
     const data = await response.json();
-    const raw = data.output_text || '';
-    try {
-      const parsed = JSON.parse(raw);
+    const raw = extractOutputText(data);
+    const parsed = parseJson(raw);
+
+    if (!parsed) {
       return NextResponse.json({
-        reply: String(parsed.reply || 'Я слушаю тебя.'),
-        effects: {
-          trustDelta: clamp(Number(parsed.trustDelta) || 0, -2, 2),
-          closenessDelta: clamp(Number(parsed.closenessDelta) || 0, -2, 2),
-          tensionDelta: clamp(Number(parsed.tensionDelta) || 0, -2, 2),
-          mood: ['calm','warm','playful','sad','curious','guarded'].includes(parsed.mood) ? parsed.mood : 'calm',
-        },
-        memory: typeof parsed.memory === 'string' ? parsed.memory.slice(0, 180) : '',
+        reply: raw || 'Я слушаю тебя.',
+        effects: { trustDelta: 0, closenessDelta: 0, tensionDelta: 0, mood: 'calm' },
+        memory: '',
       });
-    } catch {
-      return NextResponse.json({ reply: raw || 'Я слушаю тебя.', effects: { trustDelta: 0, closenessDelta: 0, tensionDelta: 0, mood: 'calm' }, memory: '' });
     }
+
+    return NextResponse.json({
+      reply: String(parsed.reply || 'Я слушаю тебя.'),
+      effects: {
+        trustDelta: clamp(Number(parsed.trustDelta) || 0, -2, 2),
+        closenessDelta: clamp(Number(parsed.closenessDelta) || 0, -2, 2),
+        tensionDelta: clamp(Number(parsed.tensionDelta) || 0, -2, 2),
+        mood: moods.includes(parsed.mood) ? parsed.mood : 'calm',
+      },
+      memory: typeof parsed.memory === 'string' ? parsed.memory.slice(0, 180) : '',
+    });
   } catch (error) {
     console.error('Mira route error', error);
     return NextResponse.json({ reply: 'Что-то пошло не так. Но наш разговор сохранён.' }, { status: 500 });
