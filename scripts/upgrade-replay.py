@@ -1,0 +1,65 @@
+from pathlib import Path
+
+p = Path('app/page.tsx')
+s = p.read_text()
+
+def replace(old: str, new: str, label: str):
+    global s
+    if old not in s:
+        raise SystemExit(f'missing expected pattern: {label}')
+    s = s.replace(old, new, 1)
+
+replace("const RUN_COUNT_KEY = 'between-us-run-count-v1';", "const RUN_COUNT_KEY = 'between-us-run-count-v1';\nconst LAST_RUN_KEY = 'between-us-last-run-v1';", 'run key')
+
+marker = "const chapterById = new Map(chapters.map((chapter) => [chapter.id, chapter]));"
+if 'const replayScenes: Scene[]' not in s:
+    replay = '''const replayScenes: Scene[] = [
+  { id: 'replay-01-return', title: '23:47', subtitle: 'ВТОРОЙ ВЕЧЕР / ВОЗВРАЩЕНИЕ', nextSceneId: 'replay-02-memory', line: '«Странно. Я уже знаю, что ты сейчас скажешь».', detail: 'Мира смотрит на тебя дольше обычного. На этот раз первым меняется не её голос — а твой выбор.', choices: [
+    { id: 'replay-01-choice-01', text: 'Сделать иначе, чем в прошлый раз.', trust: 2, tension: -1, response: 'Она улыбается: «Вот. Сейчас ты действительно меня услышал».', memory: 'Во второй раз ты не повторил себя.', next: 'Она не садится у окна. Она ждёт, что ты сам выберешь место.', echo: 'Первое решение второго вечера стало другим.' },
+    { id: 'replay-01-choice-02', text: 'Повторить свой прошлый выбор.', trust: -1, tension: 1, response: 'Она тихо говорит: «Я так и думала».', memory: 'Ты повторил знакомый путь — и Мира заметила это.', next: 'Но теперь она задаёт вопрос, которого не было в первый раз.', echo: 'Повторение оказалось выбором само по себе.' },
+    { id: 'replay-01-choice-03', text: 'Спросить её: «А ты чего хочешь сейчас?»', trust: 3, tension: 0, response: 'Она впервые отвечает сразу: «Чтобы сегодня ты не решал за меня».', memory: 'Ты передал ей право вести этот разговор.', next: 'Мира закрывает окно и остаётся в комнате.', echo: 'Во втором прохождении инициатива перешла к ней.' },
+  ] },
+  { id: 'replay-02-memory', title: '00:16', subtitle: 'ВТОРОЙ ВЕЧЕР / ПАМЯТЬ', nextSceneId: 'replay-03-door', line: 'На экране появляется старое сообщение.', detail: 'Ты узнаёшь его. Мира тоже. Но теперь она предлагает не повторять разговор из прошлого.', choices: [
+    { id: 'replay-02-choice-01', text: 'Открыть сообщение вместе с ней.', trust: 3, tension: 0, response: 'Она садится рядом. «Теперь я могу сказать, что тогда не смогла».', memory: 'Вы вместе вернулись к моменту, который раньше разделил вас.', next: 'Она рассказывает то, чего не было в первом прохождении.', echo: 'Прошлая версия ночи стала причиной нового разговора.' },
+    { id: 'replay-02-choice-02', text: 'Удалить сообщение и не возвращаться назад.', trust: 1, tension: -1, response: 'Мира кивает: «Наверное, не всё прошлое нужно спасать».', memory: 'Ты позволил прошлому остаться прошлым.', next: 'Она предлагает показать тебе место, куда собиралась уйти.', echo: 'Второй путь открывает событие, которого не было раньше.' },
+    { id: 'replay-02-choice-03', text: 'Сказать: «Я помню, чем это закончилось».', trust: -1, tension: 3, response: 'Её взгляд становится серьёзным: «Тогда не повторяй мою сторону этой истории».', memory: 'Ты принёс в разговор память о будущем.', next: 'Она выходит первой. Теперь тебе решать, пойдёшь ли ты следом.', echo: 'Знание прошлого не гарантирует правильного выбора.' },
+  ] },
+  { id: 'replay-03-door', title: '00:41', subtitle: 'ВТОРОЙ ВЕЧЕР / ДВЕРЬ', nextSceneId: 'replay-04-confession', line: 'Мира открывает дверь, которую в первый раз не открыла.', detail: 'За ней нет тайны. Только лестница вниз и старый конверт на подоконнике.', choices: [
+    { id: 'replay-03-choice-01', text: 'Пойти за ней.', trust: 2, tension: 1, response: '«Хорошо. Только теперь не веди меня — иди рядом».', memory: 'Ты вошёл в место, которое раньше осталось за кадром.', next: 'На первом этаже она отдаёт тебе конверт.', echo: 'Второе прохождение буквально открывает новую дверь.' },
+    { id: 'replay-03-choice-02', text: 'Остаться и дать ей самой решить.', trust: 3, tension: -1, response: 'Она возвращается через минуту: «Спасибо. Мне нужно было сделать это самой».', memory: 'Ты не стал превращать близость в контроль.', next: 'Конверт остаётся между вами.', echo: 'Иногда новый путь появляется благодаря отсутствию действия.' },
+    { id: 'replay-03-choice-03', text: 'Спросить, почему она не показала дверь раньше.', trust: 0, tension: 2, response: '«Потому что раньше ты слишком торопился узнать ответ».', memory: 'Ты услышал о своей роли в том, что осталось невысказанным.', next: 'Она протягивает тебе конверт.', echo: 'Вторая версия истории делает игрока частью причины.' },
+  ] },
+  { id: 'replay-04-confession', title: '01:08', subtitle: 'ВТОРОЙ ВЕЧЕР / ПРАВДА', nextSceneId: 'replay-05-choice', line: '«В первый раз я рассказала тебе только половину».', detail: 'В конверте — билет на поезд и короткая записка без подписи.', choices: [
+    { id: 'replay-04-choice-01', text: 'Спросить, хочет ли она уехать.', trust: 2, tension: 0, response: '«Не знаю. Но теперь хочу, чтобы решение было моим».', memory: 'Ты не пытался удержать её.', next: 'Она рвёт билет пополам.', echo: 'Событие второго прохождения меняет её решение о будущем.' },
+    { id: 'replay-04-choice-02', text: 'Спросить, хочет ли она остаться.', trust: 3, tension: 0, response: '«Я хочу остаться здесь. Но не потому, что ты попросил».', memory: 'Она выбрала остаться без обещания тебе.', next: 'Она убирает билет в карман.', echo: 'Близость стала результатом её выбора, а не твоего спасения.' },
+    { id: 'replay-04-choice-03', text: 'Сказать: «Что бы ты ни выбрала — я рядом».', trust: 1, tension: -1, response: 'Она кивает: «Вот теперь я верю, что это не условие».', memory: 'Ты оставил ей свободу выбора.', next: 'Она сама предлагает открыть конверт до конца.', echo: 'Во втором пути доверие строится без давления.' },
+  ] },
+  { id: 'replay-05-choice', title: '01:31', subtitle: 'ВТОРОЙ ВЕЧЕР / РАЗВИЛКА', nextSceneId: 'replay-06-morning', line: '«Есть ещё одна вещь, которой не было вчера».', detail: 'Мира показывает фотографию. На обороте сегодняшняя дата.', choices: [
+    { id: 'replay-05-choice-01', text: 'Спросить, кто сделал снимок.', trust: 2, tension: 1, response: '«Ты. Но ещё не знаешь об этом».', memory: 'Второй вечер оставил след ещё до своего финала.', next: 'Она предлагает сделать снимок прямо сейчас.', echo: 'Игра впервые создаёт память о самом повторном прохождении.' },
+    { id: 'replay-05-choice-02', text: 'Не спрашивать. Просто посмотреть.', trust: 3, tension: -1, response: 'Она улыбается: «Спасибо. Сегодня мне не нужно всё объяснять».', memory: 'Ты позволил моменту остаться моментом.', next: 'Она кладёт фотографию между вами.', echo: 'То, что раньше требовало слов, теперь выдерживает тишину.' },
+    { id: 'replay-05-choice-03', text: 'Сказать, что не хочешь менять прошлое.', trust: 0, tension: 2, response: '«И не нужно. Второй шанс не про прошлое».', memory: 'Ты понял смысл второго прохождения.', next: 'Она открывает окно. На улице уже светает.', echo: 'Теперь игра говорит напрямую о цене повторного выбора.' },
+  ] },
+  { id: 'replay-06-morning', title: '02:03', subtitle: 'ВТОРОЙ ВЕЧЕР / УТРО', line: 'Утром сообщение приходит снова.', detail: 'Но на этот раз Мира пишет не потому, что боится остаться одна.', choices: [
+    { id: 'replay-06-choice-01', text: '«Я помню».', trust: 2, tension: 0, response: '«Я тоже. Поэтому сегодня всё получилось иначе».', memory: 'Ты изменил не прошлое — отношение к нему.', next: 'Она присылает фотографию сегодняшнего утра.', echo: 'Вторая версия стала отдельной историей, а не копией.' },
+    { id: 'replay-06-choice-02', text: '«Что изменилось?»', trust: 3, tension: 0, response: '«Я перестала ждать, что кто-то выберет за меня».', memory: 'Она стала героиней собственного выбора.', next: 'Она предлагает встретиться днём.', echo: 'Главное последствие второго прохождения — её самостоятельность.' },
+    { id: 'replay-06-choice-03', text: 'Ничего не отвечать.', trust: -1, tension: 2, response: 'На этот раз она не пишет второе сообщение.', memory: 'Ты получил другую тишину — потому что теперь знаешь её цену.', next: 'Экран гаснет. История заканчивается не там, где закончилась в первый раз.', echo: 'Даже знакомый выбор приводит к новому событию.' },
+  ] },
+];
+
+function findReplayScene(sceneId: string) { return replayScenes.find((scene) => scene.id === sceneId); }
+
+'''
+    s = s.replace(marker, replay, 1)
+
+replace("const current = findScene(chapter.id, sceneId) ?? chapter.scenes[0];", "const current = (runNumber > 1 ? findReplayScene(sceneId) : findScene(chapter.id, sceneId)) ?? (runNumber > 1 ? replayScenes[0] : chapter.scenes[0]);", 'current scene selector')
+replace("if (current.nextSceneId) {\n      const nextScene = findScene(chapter.id, current.nextSceneId);", "if (current.nextSceneId) {\n      const nextScene = runNumber > 1 ? findReplayScene(current.nextSceneId) : findScene(chapter.id, current.nextSceneId);", 'replay navigation')
+replace("function startFresh() {\n    let nextRun = runNumber + 1;\n    try {\n      const stored = Number(localStorage.getItem(RUN_COUNT_KEY) ?? '0');\n      nextRun = Math.max(runNumber, stored) + 1;", "function startFresh() {\n    let nextRun = 1;\n    try {\n      const previous = localStorage.getItem(SAVE_KEY);\n      if (previous) localStorage.setItem(LAST_RUN_KEY, previous);\n      const stored = Number(localStorage.getItem(RUN_COUNT_KEY) ?? '0');\n      const hasPreviousRun = Boolean(previous) || stored > 0 || started || ending;\n      nextRun = hasPreviousRun ? Math.max(runNumber, stored) + 1 : 1;", 'startFresh replay counter')
+replace("setSceneId(chapters[0].scenes[0].id);", "setSceneId(nextRun > 1 ? replayScenes[0].id : chapters[0].scenes[0].id);", 'startFresh scene')
+replace("sceneId: chapters[0].scenes[0].id, choices: {}, trust: 0, tension: 0, memories: [], ending: false, runNumber: nextRun", "sceneId: nextRun > 1 ? replayScenes[0].id : chapters[0].scenes[0].id, choices: {}, trust: 0, tension: 0, memories: [], ending: false, runNumber: nextRun", 'initial save scene')
+replace("const savedScene = savedChapter && typeof saved.sceneId === 'string' ? findScene(savedChapter.id, saved.sceneId) : undefined;", "const savedScene = savedChapter && typeof saved.sceneId === 'string' ? (saved.runNumber && saved.runNumber > 1 ? findReplayScene(saved.sceneId) : findScene(savedChapter.id, saved.sceneId)) : undefined;", 'saved replay scene')
+replace("const sceneNumber = chapter.scenes.findIndex((scene) => scene.id === current.id) + 1;", "const sceneNumber = runNumber > 1 ? replayScenes.findIndex((scene) => scene.id === current.id) + 1 : chapter.scenes.findIndex((scene) => scene.id === current.id) + 1;", 'replay scene number')
+replace("<span>{current.subtitle}</span><span>ПАМЯТЬ {memories.length.toString().padStart(2, '0')}</span>", "<span>{current.subtitle}</span><span>{runNumber > 1 ? 'ПОВТОРНОЕ ПРОХОЖДЕНИЕ' : `ПАМЯТЬ ${memories.length.toString().padStart(2, '0')}`}</span>", 'replay header')
+replace("<h1>Ты не изменил<br /><em>её прошлое.</em><br />Ты изменил то,<br />что она решилась рассказать.</h1>", "<h1>{runNumber > 1 ? <>Ты не вернулся<br /><em>в прошлое.</em><br />Ты открыл то,<br />чего не было в первый раз.</> : <>Ты не изменил<br /><em>её прошлое.</em><br />Ты изменил то,<br />что она решилась рассказать.</>}</h1>", 'replay ending')
+
+p.write_text(s)
+print('Replay upgrade applied.')
