@@ -70,8 +70,12 @@ s = s.replace(
     1,
 )
 s = s.replace(
-    "      localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 3, chapterId: CHAPTER_ONE_ID, sceneId: nextRun > 1 ? replayScenes[0].id : chapters[0].scenes[0].id, choices: {}, trust: 0, tension: 0, memories: [], ending: false, runNumber: nextRun } satisfies SaveV3));",
-    '''      localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 3, chapterId: CHAPTER_ONE_ID, sceneId: nextRun > 1 ? replayScenes[0].id : chapters[0].scenes[0].id, choices: {}, trust: 0, tension: 0, memories: [], ending: false, runNumber: nextRun, previousChoices: replayPreviousChoices } satisfies SaveV3));''',
+    "previousChoices: replayPreviousChoices } satisfies SaveV3",
+    "previousChoices: replayPreviousChoices } satisfies SaveV3",
+)
+s = s.replace(
+    "      localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 3, chapterId: CHAPTER_ONE_ID, sceneId: nextRun > 1 ? replayScenes[0].id : chapters[0].scenes[0].id, choices: {}, trust: 0, tension: 0, memories: [], ending: false, runNumber: nextRun, previousChoices: replayPreviousChoices } satisfies SaveV3));",
+    "      localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 3, chapterId: CHAPTER_ONE_ID, sceneId: nextRun > 1 ? replayScenes[0].id : chapters[0].scenes[0].id, choices: {}, trust: 0, tension: 0, memories: [], ending: false, runNumber: nextRun, previousChoices } satisfies SaveV3));",
     1,
 )
 s = s.replace(
