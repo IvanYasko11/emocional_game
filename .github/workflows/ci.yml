@@ -39,6 +39,8 @@ jobs:
       - name: Productize endings
         if: ${{ !contains(github.event.head_commit.message, '[replay-bot]') }}
         run: python3 scripts/productize-endings.py
+      - name: Smoke test
+        run: python3 scripts/smoke-test.py
       - name: Build
         run: npm run build
       - name: Commit replay upgrades
