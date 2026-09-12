@@ -17,8 +17,8 @@ replacement = '''  if (ending) {
     const replay = runNumber > 1;
     const firstWasOpen = first['scene-04-name'] === 'scene-04-name-choice-01' || first['scene-04-name'] === 'scene-04-name-choice-02';
     const firstWasSilent = first['scene-02-after'] === 'scene-02-after-choice-03' || first['scene-05-test'] === 'scene-05-test-choice-03';
-    const replayChoseHonesty = choices['replay-05-choice'] === 'replay-05-choice-honest';
-    const replayChoseDistance = choices['replay-05-choice'] === 'replay-05-choice-distance';
+    const replayChoseHonesty = choices['replay-05-choice'] === 'replay-05-choice-02';
+    const replayChoseDistance = choices['replay-05-choice'] === 'replay-05-choice-03';
     let endingTitle = 'НЕОПРЕДЕЛЁННОСТЬ';
     let endingText = 'Не каждая встреча заканчивается ответом. Иногда человек остаётся в памяти именно вопросом.';
     let endingLabel = 'НЕОПРЕДЕЛЁННОСТЬ';
