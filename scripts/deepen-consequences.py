@@ -13,14 +13,20 @@ if needle not in s:
 s = s.replace(needle, needle + '\n' + marker, 1)
 
 start = s.find('function personalizeReplayScene')
-end = s.find('\n  return scene;\n}', start)
-if start < 0 or end < 0:
+if start < 0:
     raise SystemExit('Replay personalization function not found')
+anchor = "  const fifth = previousChoices['scene-05-test'];\n"
+pos = s.find(anchor, start)
+if pos < 0:
+    raise SystemExit('Replay choice variables not found')
+pos += len(anchor)
 
 patch = r'''
 
-  // Deep consequences: the replay remembers *patterns* across several first-run choices.
-  // This deliberately changes what happens, not only what the narrator says.
+  // Deep consequences: several first-run choices combine into a new replay state.
+  // These checks intentionally run before the older replay branches so they can reroute scenes.
+  const third = previousChoices['scene-03-photograph'];
+  const fourth = previousChoices['scene-04-name'];
   const chosePresence = first === 'scene-01-window-choice-01';
   const choseCuriosity = second === 'scene-02-after-choice-02';
   const protectedHerPast = third === 'scene-03-photograph-choice-01';
@@ -68,6 +74,6 @@ patch = r'''
   }
 '''
 
-s = s[:end] + patch + s[end:]
+s = s[:pos] + patch + s[pos:]
 p.write_text(s)
 print('Deep consequence engine applied.')
