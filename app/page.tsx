@@ -40,6 +40,7 @@ type SaveV3 = {
   tension: number;
   memories: string[];
   ending?: boolean;
+  runNumber?: number;
 };
 
 type LegacySaveV2 = {
@@ -53,6 +54,7 @@ type LegacySaveV2 = {
 
 const SAVE_KEY = 'between-us-save-v3';
 const LEGACY_SAVE_KEY = 'between-us-save-v2';
+const RUN_COUNT_KEY = 'between-us-run-count-v1';
 const CHAPTER_ONE_ID = 'chapter-01-window';
 
 const chapters: Chapter[] = [{
@@ -156,6 +158,7 @@ export default function Home() {
   const [ending, setEnding] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [runNumber, setRunNumber] = useState(1);
   const audio = useRef<AudioContext | null>(null);
   const ambient = useRef<OscillatorNode | null>(null);
   const chapter = chapterById.get(chapterId) ?? chapters[0];
@@ -209,6 +212,7 @@ export default function Home() {
       tension,
       memories,
       ending,
+      runNumber,
       ...next,
     };
   }
@@ -253,7 +257,14 @@ export default function Home() {
   }
 
   function startFresh() {
-    try { localStorage.removeItem(SAVE_KEY); } catch {}
+    let nextRun = runNumber + 1;
+    try {
+      const stored = Number(localStorage.getItem(RUN_COUNT_KEY) ?? '0');
+      nextRun = Math.max(runNumber, stored) + 1;
+      localStorage.setItem(RUN_COUNT_KEY, String(nextRun));
+      localStorage.removeItem(SAVE_KEY);
+    } catch {}
+    setRunNumber(nextRun);
     setStarted(true);
     setChapterId(CHAPTER_ONE_ID);
     setSceneId(chapters[0].scenes[0].id);
@@ -264,6 +275,9 @@ export default function Home() {
     setEnding(false);
     sound('warm');
     startAmbient();
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 3, chapterId: CHAPTER_ONE_ID, sceneId: chapters[0].scenes[0].id, choices: {}, trust: 0, tension: 0, memories: [], ending: false, runNumber: nextRun } satisfies SaveV3));
+    } catch {}
   }
 
   async function shareStory() {
@@ -278,6 +292,8 @@ export default function Home() {
 
   useEffect(() => {
     try {
+      const storedRun = Number(localStorage.getItem(RUN_COUNT_KEY) ?? '0');
+      if (storedRun > 0) setRunNumber(storedRun);
       const raw = localStorage.getItem(SAVE_KEY);
       if (raw) {
         const saved = JSON.parse(raw) as Partial<SaveV3>;
@@ -292,6 +308,7 @@ export default function Home() {
           setTension(saved.tension ?? 0);
           setMemories(Array.isArray(saved.memories) ? saved.memories : []);
           setEnding(Boolean(saved.ending));
+          if (saved.runNumber && saved.runNumber > 0) setRunNumber(saved.runNumber);
         }
       } else {
         const legacyRaw = localStorage.getItem(LEGACY_SAVE_KEY);
@@ -313,6 +330,7 @@ export default function Home() {
             tension: legacy.tension ?? 0,
             memories: legacyMemories,
             ending: Boolean(legacy.ending),
+            runNumber: storedRun || 1,
           };
           setStarted(Boolean(legacy.started));
           setChapterId(migrated.chapterId);
@@ -322,6 +340,7 @@ export default function Home() {
           setTension(migrated.tension);
           setMemories(migrated.memories);
           setEnding(Boolean(migrated.ending));
+          setRunNumber(migrated.runNumber ?? 1);
           save(migrated);
         }
       }
@@ -343,6 +362,8 @@ export default function Home() {
         : tension >= 5
           ? 'Она запомнит разговор. Но некоторые двери открываются только тогда, когда перестаёшь торопиться их открыть.'
           : 'Она не скажет вслух, что почувствовала. Но твой выбор останется в её памяти.';
+    const endingLabel = trust >= 8 ? 'БЛИЗОСТЬ' : trust >= 4 ? 'ДОВЕРИЕ' : tension >= 5 ? 'ДИСТАНЦИЯ' : 'НЕОПРЕДЕЛЁННОСТЬ';
+    const replayText = runNumber > 1 ? 'Прожить иначе · снова' : 'Прожить иначе';
     return <main className={`stage mood-${tension > trust ? 'tense' : trust > tension ? 'warm' : 'neutral'}`}>
       <div className="grain" /><div className="ambient" />
       <section className="intro ending">
@@ -351,15 +372,18 @@ export default function Home() {
         <p>{endingText}</p>
         <div className="ending-meta">
           <span>ВОСПОМИНАНИЙ · {memories.length.toString().padStart(2, '0')}</span>
-          <span>ТВОЙ СЛЕД · {trust >= 8 ? 'БЛИЗОСТЬ' : trust >= 4 ? 'ДОВЕРИЕ' : tension >= 5 ? 'ДИСТАНЦИЯ' : 'НЕОПРЕДЕЛЁННОСТЬ'}</span>
+          <span>ТВОЙ СЛЕД · {endingLabel}</span>
+          {runNumber > 1 && <span>ПРОХОЖДЕНИЕ · {runNumber}</span>}
         </div>
         <div className="ending-actions">
-          <button className="primary" onClick={startFresh}>Прожить иначе <span>↻</span></button>
+          <button className="primary" onClick={startFresh}>{replayText} <span>↻</span></button>
           <button className="ghost" onClick={shareStory}>{sharing ? 'Скопировано' : 'Поделиться историей ↗'}</button>
         </div>
       </section>
     </main>;
   }
+
+  const replayHint = runNumber > 1 && sceneNumber === 1 && !selectedChoice;
 
   return <main className={`stage mood-${tension > trust ? 'tense' : trust > tension ? 'warm' : 'neutral'}`}>
     <div className="grain" /><div className="ambient" />
@@ -375,8 +399,9 @@ export default function Home() {
       <div className="scene">
         <div className="character" aria-label="Мира"><div className="halo" /><div className="face" /><div className="pulse" /></div>
         <div className="copy">
-          <div className="name">МИРА <span>•</span> она ещё не знает, что ты запомнишь</div>
-          {!selectedChoice ? <><h2>{current.line}</h2><p>{current.detail}</p></> : <><div className="reaction">РЕАКЦИЯ МИРЫ</div><h2>{selectedChoice.response}</h2><p className="memory">ПАМЯТЬ СОХРАНЕНА · {selectedChoice.memory}</p><p className="next-line">{selectedChoice.next}</p>{selectedChoice.echo && <p className="echo">{selectedChoice.echo}</p>}</>}
+          {replayHint && <div className="reaction">ТЫ УЖЕ БЫЛ ЗДЕСЬ</div>}
+          <div className="name">МИРА <span>•</span> {replayHint ? 'в этот раз всё может сложиться иначе' : 'она ещё не знает, что ты запомнишь'}</div>
+          {!selectedChoice ? <><h2>{replayHint ? '«Некоторые ответы понимаешь только после того, как уже выбрал.»' : current.line}</h2><p>{replayHint ? 'Ты знаешь эту ночь. Но не знаешь, каким человеком станешь в ней во второй раз.' : current.detail}</p></> : <><div className="reaction">РЕАКЦИЯ МИРЫ</div><h2>{selectedChoice.response}</h2><p className="memory">ПАМЯТЬ СОХРАНЕНА · {selectedChoice.memory}</p><p className="next-line">{selectedChoice.next}</p>{selectedChoice.echo && <p className="echo">{selectedChoice.echo}</p>}</>}
         </div>
       </div>
       {!selectedChoice ? <div className="choices">{current.choices.map((c, i) => <button key={c.id} onClick={() => choose(c)}><span>0{i + 1}</span>{c.text}<b>↗</b></button>)}</div> : <div className="after"><div className="meters"><span>сцена {sceneNumber} / {chapter.scenes.length}</span><span>выбор сохранён</span></div><button className="primary" onClick={continueStory}>{current.nextSceneId || current.nextChapterId || chapter.nextChapterId ? 'Продолжить' : 'Открыть последнее воспоминание'} <span>→</span></button></div>}
