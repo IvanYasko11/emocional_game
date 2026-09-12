@@ -10,155 +10,32 @@ type MiraState = { trust: number; closeness: number; tension: number; memories: 
 type ChatMessage = { role: 'mira' | 'user'; text: string; event?: boolean };
 type PhoneMessage = { id: string; direction: 'mira' | 'player'; body: string; kind: string; readAt?: string | null; createdAt: number };
 type LifeEvent = { id: string; title: string; body: string; kind: string; mood: Mood; occurredAt: number };
-type RemoteProfile = { user_id: string; first_name: string | null; trust: number; affection: number; tension: number; mood: Mood; memories: Memory[]; updated_at: string };
 
-const KEY = 'between-us-mira-v1';
-const SAVE = 'between-us-save-v3';
-const PLAYER_KEY = 'between-us-player-id-v1';
-const LAST_SEEN_KEY = 'between-us-mira-last-seen-v1';
-const LAST_EVENT_KEY = 'between-us-mira-last-event-v1';
-const PHONE_KEY = 'between-us-mira-phone-v1';
-const LIFE_KEY = 'between-us-mira-life-v1';
-const defaultState: MiraState = { trust: 0, closeness: 0, tension: 0, memories: [], firstName: 'ты', mood: 'calm' };
+const KEY = 'between-us-mira-v1', SAVE = 'between-us-save-v3', PHONE_KEY = 'between-us-mira-phone-v1', LIFE_KEY = 'between-us-mira-life-v1', PLAYER_KEY = 'between-us-player-id-v1', LAST_SEEN_KEY = 'between-us-mira-last-seen-v1', LAST_EVENT_KEY = 'between-us-mira-last-event-v1';
 const moods: Mood[] = ['calm', 'warm', 'playful', 'sad', 'curious', 'guarded'];
-
-function getPlayerId() {
-  if (typeof window === 'undefined') return 'server';
-  let id = localStorage.getItem(PLAYER_KEY);
-  if (!id) { id = typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`; localStorage.setItem(PLAYER_KEY, id); }
-  return id;
-}
-
-function loadState(): MiraState {
-  if (typeof window === 'undefined') return defaultState;
-  try {
-    const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
-    const game = JSON.parse(localStorage.getItem(SAVE) || 'null');
-    if (saved && typeof saved === 'object') return { ...defaultState, ...saved, memories: Array.isArray(saved.memories) ? saved.memories : [] };
-    return { ...defaultState, trust: Number(game?.trust || 0), closeness: Math.max(0, Number(game?.trust || 0) * 2 - Number(game?.tension || 0)), tension: Number(game?.tension || 0), memories: Array.isArray(game?.memories) ? game.memories.map((text: string) => ({ text, createdAt: Date.now() })) : [] };
-  } catch { return defaultState; }
-}
-function loadJson<T>(key: string, fallback: T): T { try { const value = JSON.parse(localStorage.getItem(key) || 'null'); return value ?? fallback; } catch { return fallback; } }
-function fromRemote(row: RemoteProfile): MiraState { return { trust: Number(row.trust || 0), closeness: Number(row.affection || 0), tension: Number(row.tension || 0), memories: Array.isArray(row.memories) ? row.memories.slice(-30) : [], firstName: row.first_name || 'ты', mood: moods.includes(row.mood) ? row.mood : 'calm' }; }
-function relationshipOf(s: MiraState) { return Math.max(0, Math.min(100, 50 + s.closeness * 4 + s.trust * 2 - s.tension * 3)); }
+const defaultState: MiraState = { trust: 0, closeness: 0, tension: 0, memories: [], firstName: 'ты', mood: 'calm' };
 function uid() { return typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`; }
+function loadJson<T>(key: string, fallback: T): T { try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; } catch { return fallback; } }
+function loadState(): MiraState { try { const saved = JSON.parse(localStorage.getItem(KEY) || 'null'); const game = JSON.parse(localStorage.getItem(SAVE) || 'null'); if (saved) return { ...defaultState, ...saved, memories: Array.isArray(saved.memories) ? saved.memories : [] }; return { ...defaultState, trust: Number(game?.trust || 0), closeness: Math.max(0, Number(game?.trust || 0) * 2 - Number(game?.tension || 0)), tension: Number(game?.tension || 0), memories: Array.isArray(game?.memories) ? game.memories.map((text: string) => ({ text, createdAt: Date.now() })) : [] }; } catch { return defaultState; } }
+function playerId() { let id = localStorage.getItem(PLAYER_KEY); if (!id) { id = uid(); localStorage.setItem(PLAYER_KEY, id); } return id; }
+function relationship(s: MiraState) { return Math.max(0, Math.min(100, 50 + s.closeness * 4 + s.trust * 2 - s.tension * 3)); }
 
 export default function MiraPage() {
-  const [state, setState] = useState<MiraState>(defaultState);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [phone, setPhone] = useState<PhoneMessage[]>([]);
-  const [life, setLife] = useState<LifeEvent[]>([]);
-  const [tab, setTab] = useState<'chat' | 'phone' | 'life'>('chat');
-  const [input, setInput] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [eventBusy, setEventBusy] = useState(false);
-  const [lifeBusy, setLifeBusy] = useState(false);
-  const [identity, setIdentity] = useState<'local' | 'device' | 'account'>('local');
-  const [accountEmail, setAccountEmail] = useState('');
-  const [emailInput, setEmailInput] = useState('');
-  const [emailSent, setEmailSent] = useState(false);
-
-  function persist(next: MiraState) { setState(next); localStorage.setItem(KEY, JSON.stringify(next)); }
-  function persistPhone(next: PhoneMessage[]) { setPhone(next); localStorage.setItem(PHONE_KEY, JSON.stringify(next.slice(-100))); }
-  function persistLife(next: LifeEvent[]) { setLife(next); localStorage.setItem(LIFE_KEY, JSON.stringify(next.slice(-40))); }
-
-  async function saveRemote(next: MiraState) {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) return;
-    await supabase.from('mira_player_profiles').upsert({ user_id: session.user.id, first_name: next.firstName === 'ты' ? null : next.firstName, trust: next.trust, affection: next.closeness, tension: next.tension, mood: next.mood, memories: next.memories, player_metadata: { browserPlayerId: getPlayerId() }, last_seen_at: new Date().toISOString() }, { onConflict: 'user_id' });
+  const [state, setState] = useState(defaultState), [chat, setChat] = useState<ChatMessage[]>([]), [phone, setPhone] = useState<PhoneMessage[]>([]), [life, setLife] = useState<LifeEvent[]>([]);
+  const [panel, setPanel] = useState<'chat' | 'phone' | 'life'>('chat'), [mobileView, setMobileView] = useState<'story' | 'mira'>('mira'), [input, setInput] = useState(''), [busy, setBusy] = useState(false), [emailInput, setEmailInput] = useState(''), [emailSent, setEmailSent] = useState(false), [identity, setIdentity] = useState<'local' | 'device' | 'account'>('local'), [storyKey, setStoryKey] = useState(0);
+  const persist = (next: MiraState) => { setState(next); localStorage.setItem(KEY, JSON.stringify(next)); };
+  const persistPhone = (next: PhoneMessage[]) => { const x = next.slice(-100); setPhone(x); localStorage.setItem(PHONE_KEY, JSON.stringify(x)); };
+  const persistLife = (next: LifeEvent[]) => { const x = next.slice(-40); setLife(x); localStorage.setItem(LIFE_KEY, JSON.stringify(x)); };
+  async function saveRemote(next: MiraState) { const { data: { session } } = await supabase.auth.getSession(); if (!session?.user) return; await supabase.from('mira_player_profiles').upsert({ user_id: session.user.id, first_name: next.firstName === 'ты' ? null : next.firstName, trust: next.trust, affection: next.closeness, tension: next.tension, mood: next.mood, memories: next.memories, player_metadata: { browserPlayerId: playerId() }, last_seen_at: new Date().toISOString() }, { onConflict: 'user_id' }); }
+  async function savePhone(items: PhoneMessage[]) { const { data: { session } } = await supabase.auth.getSession(); if (!session?.user) return; await Promise.all(items.slice(-10).map(m => supabase.from('mira_phone_messages').upsert({ id: m.id, user_id: session.user.id, direction: m.direction, body: m.body, kind: m.kind, read_at: m.readAt || null, created_at: new Date(m.createdAt).toISOString() }, { onConflict: 'id' }))); }
+  async function hydrate() { const local = loadState(); const localPhone = loadJson<PhoneMessage[]>(PHONE_KEY, []); const localLife = loadJson<LifeEvent[]>(LIFE_KEY, []); setState(local); setPhone(localPhone); setLife(localLife); setChat([{ role: 'mira', text: local.memories.length ? 'Ты вернулся. Я помню больше, чем в прошлый раз.' : 'Привет. Я Мира. Здесь можно говорить со мной и одновременно продолжать историю.' }]); let { data: { session } } = await supabase.auth.getSession(); if (!session?.user) { const a = await supabase.auth.signInAnonymously(); session = a.data.session; if (!session?.user) return; setIdentity('device'); } else setIdentity(session.user.email ? 'account' : 'device'); const [{ data: profile }, { data: rp }, { data: rl }] = await Promise.all([supabase.from('mira_player_profiles').select('*').eq('user_id', session.user.id).maybeSingle(), supabase.from('mira_phone_messages').select('*').eq('user_id', session.user.id).order('created_at', { ascending: true }).limit(100), supabase.from('mira_life_events').select('*').eq('user_id', session.user.id).order('occurred_at', { ascending: true }).limit(40)]); if (profile) { const remote = { trust: Number(profile.trust || 0), closeness: Number(profile.affection || 0), tension: Number(profile.tension || 0), memories: Array.isArray(profile.memories) ? profile.memories.slice(-30) : [], firstName: profile.first_name || 'ты', mood: moods.includes(profile.mood) ? profile.mood : 'calm' as Mood }; persist(remote); setChat([{ role: 'mira', text: remote.memories.length ? 'Я помню наш разговор. Давай продолжим.' : 'Я здесь. Давай знакомиться.' }]); } else await saveRemote(local); if (rp?.length) persistPhone(rp.map((m: any) => ({ id: m.id, direction: m.direction, body: m.body, kind: m.kind, readAt: m.read_at, createdAt: Date.parse(m.created_at) }))); if (rl?.length) persistLife(rl.map((e: any) => ({ id: e.id, title: e.title, body: e.body, kind: e.kind, mood: moods.includes(e.mood) ? e.mood : 'calm', occurredAt: Date.parse(e.occurred_at) })));
   }
-  async function saveRemotePhone(items: PhoneMessage[]) {
-    const { data: { session } } = await supabase.auth.getSession(); if (!session?.user) return;
-    await Promise.all(items.slice(-12).map(item => supabase.from('mira_phone_messages').upsert({ id: item.id, user_id: session.user.id, direction: item.direction, body: item.body, kind: item.kind, read_at: item.readAt || null, created_at: new Date(item.createdAt).toISOString() }, { onConflict: 'id' })));
-  }
-  async function saveRemoteLife(items: LifeEvent[]) {
-    const { data: { session } } = await supabase.auth.getSession(); if (!session?.user) return;
-    await Promise.all(items.slice(-8).map(item => supabase.from('mira_life_events').upsert({ id: item.id, user_id: session.user.id, kind: item.kind, title: item.title, body: item.body, mood: item.mood, occurred_at: new Date(item.occurredAt).toISOString() }, { onConflict: 'id' })));
-  }
-
-  async function hydrateRemote(local: MiraState) {
-    let { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) {
-      const anonymous = await supabase.auth.signInAnonymously(); session = anonymous.data.session;
-      if (anonymous.error || !session?.user) return local; setIdentity('device');
-    } else if (session.user.email) { setIdentity('account'); setAccountEmail(session.user.email); } else setIdentity('device');
-    const [{ data: profile }, { data: remotePhone }, { data: remoteLife }] = await Promise.all([
-      supabase.from('mira_player_profiles').select('*').eq('user_id', session.user.id).maybeSingle(),
-      supabase.from('mira_phone_messages').select('*').eq('user_id', session.user.id).order('created_at', { ascending: true }).limit(100),
-      supabase.from('mira_life_events').select('*').eq('user_id', session.user.id).order('occurred_at', { ascending: true }).limit(40),
-    ]);
-    if (profile) { local = fromRemote(profile as RemoteProfile); persist(local); } else await saveRemote(local);
-    if (Array.isArray(remotePhone) && remotePhone.length) persistPhone(remotePhone.map((m: any) => ({ id: m.id, direction: m.direction, body: m.body, kind: m.kind, readAt: m.read_at, createdAt: Date.parse(m.created_at) })));
-    if (Array.isArray(remoteLife) && remoteLife.length) persistLife(remoteLife.map((e: any) => ({ id: e.id, title: e.title, body: e.body, kind: e.kind, mood: moods.includes(e.mood) ? e.mood : 'calm', occurredAt: Date.parse(e.occurred_at) })));
-    return local;
-  }
-
-  async function linkEmail() {
-    const email = emailInput.trim(); if (!email || !email.includes('@')) return;
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: `${window.location.origin}/mira` } });
-    if (!error) { setEmailSent(true); setEmailInput(''); }
-  }
-
-  async function createLifeEvent() {
-    if (lifeBusy) return; setLifeBusy(true);
-    try {
-      const res = await fetch('/api/mira/life', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ state, recentEvents: life.slice(-5) }) });
-      const data = await res.json(); if (!data.event) return;
-      const event: LifeEvent = { id: uid(), title: data.event.title, body: data.event.body, kind: data.event.kind, mood: moods.includes(data.event.mood) ? data.event.mood : state.mood, occurredAt: Date.now() };
-      const next = [...life, event].slice(-40); persistLife(next); void saveRemoteLife(next); setTab('life');
-    } finally { setLifeBusy(false); }
-  }
-
-  useEffect(() => {
-    const local = loadState(); const localPhone = loadJson<PhoneMessage[]>(PHONE_KEY, []); const localLife = loadJson<LifeEvent[]>(LIFE_KEY, []);
-    setState(local); setPhone(localPhone); setLife(localLife); setMessages([{ role: 'mira', text: local.memories.length ? 'Ты вернулся. Я помню больше, чем в прошлый раз.' : 'Привет. Я Мира. Пока мы только знакомимся.' }]);
-    hydrateRemote(local).then(next => { setState(next); localStorage.setItem(KEY, JSON.stringify(next)); }).catch(() => {});
-
-    const lastSeen = Number(localStorage.getItem(LAST_SEEN_KEY) || 0); const hoursAway = lastSeen ? (Date.now() - lastSeen) / 36e5 : 0; const lastEvent = Number(localStorage.getItem(LAST_EVENT_KEY) || 0);
-    if (lastSeen && hoursAway >= 0.5 && Date.now() - lastEvent >= 6 * 36e5) {
-      setEventBusy(true);
-      fetch('/api/mira/proactive', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ state: local, history: [], hoursAway, playerId: getPlayerId() }) }).then(r => r.json()).then(data => {
-        const event = data?.event; if (!event?.reply) return; setMessages(m => [...m, { role: 'mira', text: event.reply, event: true }]);
-        const item: PhoneMessage = { id: uid(), direction: 'mira', body: event.reply, kind: 'proactive', createdAt: Date.now() }; const nextPhone = [...localPhone, item].slice(-100); persistPhone(nextPhone); void saveRemotePhone(nextPhone);
-        const memoryText = typeof event.memory === 'string' ? event.memory.trim() : ''; const memories = memoryText ? [...local.memories, { text: memoryText, createdAt: Date.now() }].slice(-30) : local.memories;
-        const updated: MiraState = { ...local, trust: Math.max(-10, Math.min(10, local.trust + Number(event.trustDelta || 0))), closeness: Math.max(-10, Math.min(10, local.closeness + Number(event.closenessDelta || 0))), tension: Math.max(0, Math.min(10, local.tension + Number(event.tensionDelta || 0))), mood: moods.includes(event.mood) ? event.mood : local.mood, memories };
-        persist(updated); void saveRemote(updated); localStorage.setItem(LAST_EVENT_KEY, String(Date.now()));
-      }).catch(() => {}).finally(() => setEventBusy(false));
-    }
-    localStorage.setItem(LAST_SEEN_KEY, String(Date.now()));
-    const recentLife = localLife.length ? Date.now() - localLife[localLife.length - 1].occurredAt : Infinity; if (recentLife > 20 * 36e5) void createLifeEvent();
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => { if (session?.user?.email) { setIdentity('account'); setAccountEmail(session.user.email); void saveRemote(loadState()); } });
-    return () => authListener.subscription.unsubscribe();
-  }, []);
-
-  const relationship = useMemo(() => relationshipOf(state), [state]);
-  const moodLabel = { calm: 'спокойна', warm: 'теплеет', playful: 'играет', sad: 'грустит', curious: 'заинтересована', guarded: 'осторожна' }[state.mood];
-  const unread = phone.filter(m => m.direction === 'mira' && !m.readAt).length;
-
-  async function openPhone() {
-    setTab('phone'); const now = new Date().toISOString(); const next = phone.map(m => m.direction === 'mira' ? { ...m, readAt: m.readAt || now } : m); persistPhone(next);
-    const { data: { session } } = await supabase.auth.getSession(); if (session?.user) await supabase.from('mira_phone_messages').update({ read_at: now }).eq('user_id', session.user.id).is('read_at', null);
-  }
-
-  async function send() {
-    const text = input.trim(); if (!text || busy) return; setInput(''); setMessages(current => [...current, { role: 'user', text }]); setBusy(true);
-    const playerMessage: PhoneMessage = { id: uid(), direction: 'player', body: text, kind: 'message', createdAt: Date.now() }; const phoneAfterPlayer = [...phone, playerMessage].slice(-100); persistPhone(phoneAfterPlayer); void saveRemotePhone(phoneAfterPlayer);
-    try {
-      const res = await fetch('/api/mira', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: text, state, history: messages.slice(-8), playerId: getPlayerId() }) }); const data = await res.json(); const reply = data.reply || 'Я слушаю тебя.';
-      setMessages(m => [...m, { role: 'mira', text: reply }]); const miraMessage: PhoneMessage = { id: uid(), direction: 'mira', body: reply, kind: 'message', createdAt: Date.now() }; const nextPhone = [...phoneAfterPlayer, miraMessage].slice(-100); persistPhone(nextPhone); void saveRemotePhone(nextPhone);
-      const effects = data.effects || {}; const memoryText = typeof data.memory === 'string' ? data.memory.trim() : ''; const memories = memoryText ? [...state.memories, { text: memoryText, createdAt: Date.now() }].slice(-30) : state.memories;
-      const next: MiraState = { ...state, trust: Math.max(-10, Math.min(10, state.trust + Number(effects.trustDelta || 0))), closeness: Math.max(-10, Math.min(10, state.closeness + Number(effects.closenessDelta || 0))), tension: Math.max(0, Math.min(10, state.tension + Number(effects.tensionDelta || 0))), mood: moods.includes(effects.mood) ? effects.mood : state.mood, memories }; persist(next); void saveRemote(next); localStorage.setItem(LAST_SEEN_KEY, String(Date.now()));
-    } catch { setMessages(m => [...m, { role: 'mira', text: 'Я потеряла связь на секунду. Но разговор не потерян.' }]); } finally { setBusy(false); }
-  }
-
-  return <main className="mira-shell"><section className={`mira-card mood-${state.mood}`}>
-    <header className="mira-head"><div><span className="eyebrow">BETWEEN US / MIRA</span><h1>Мира</h1><p>Она помнит. У неё есть характер. И её маленькая жизнь продолжается.</p></div><div className="pulse" aria-label={`Близость ${relationship}%`}><span>{relationship}</span><small>близость</small></div></header>
-    <div className="memory-strip">{state.memories.length ? `Память: ${state.memories.length} воспоминаний` : 'Память пока пуста'} · доверие {state.trust} · напряжение {state.tension} · Мира {moodLabel} · {identity === 'account' ? `сохранено: ${accountEmail}` : identity === 'device' ? 'сохранено на устройстве' : 'локальный режим'}</div>
-    {identity !== 'account' && <div className="identity-bar"><div><strong>Сделать Миру своей историей</strong><span>Привяжи email — память, телефон и жизнь Миры можно будет восстановить на другом устройстве.</span></div><div className="identity-form"><input value={emailInput} onChange={e => setEmailInput(e.target.value)} placeholder="твой@email.com" type="email" /><button onClick={linkEmail}>{emailSent ? 'Письмо отправлено' : 'Привязать'}</button></div></div>}
-    <nav className="mira-tabs" aria-label="Разделы Миры"><button className={tab === 'chat' ? 'active' : ''} onClick={() => setTab('chat')}>Разговор</button><button className={tab === 'phone' ? 'active' : ''} onClick={openPhone}>Телефон {unread > 0 && <b>{unread}</b>}</button><button className={tab === 'life' ? 'active' : ''} onClick={() => setTab('life')}>Её жизнь</button></nav>
-    {tab === 'chat' && <><div className="chat" aria-live="polite">{messages.map((m, i) => <div key={i} className={`bubble ${m.role} ${m.event ? 'event' : ''}`}>{m.event && <span className="event-label">Мира написала первой</span>}{m.text}</div>)}{(busy || eventBusy) && <div className="bubble mira typing">Мира печатает…</div>}</div><div className="composer"><textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} placeholder="Напиши Мире…" rows={2} /><button onClick={send} disabled={busy || !input.trim()}>Отправить</button></div></>}
-    {tab === 'phone' && <section className="phone-view"><div className="section-intro"><div><span className="eyebrow">MIRA / PHONE</span><h2>Сообщения</h2><p>Не только чат. Иногда Мира сама оставляет тебе что-то здесь.</p></div><span className="phone-status">{unread ? `${unread} новых` : 'всё прочитано'}</span></div>{phone.length ? <div className="phone-list">{phone.slice().reverse().map(m => <article key={m.id} className={`phone-item ${m.direction}`}><div className="phone-meta">{m.direction === 'mira' ? 'Мира' : 'Ты'} · {new Date(m.createdAt).toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</div><p>{m.body}</p>{m.kind === 'proactive' && <span className="phone-tag">написала первой</span>}</article>)}</div> : <div className="empty-state">Пока тихо. Первое сообщение появится здесь, когда у Миры будет повод написать.</div>}</section>}
-    {tab === 'life' && <section className="life-view"><div className="section-intro"><div><span className="eyebrow">MIRA / LIFE</span><h2>Пока тебя не было</h2><p>Маленькие моменты, которые происходят с Мирой между вашими разговорами.</p></div><button className="secondary-button" onClick={createLifeEvent} disabled={lifeBusy}>{lifeBusy ? 'Ищет момент…' : 'Новый момент'}</button></div>{life.length ? <div className="life-list">{life.slice().reverse().map(e => <article key={e.id} className={`life-card mood-${e.mood}`}><div className="life-icon">{e.kind === 'song' ? '♪' : e.kind === 'place' ? '⌂' : e.kind === 'photo' ? '□' : '·'}</div><div><div className="life-meta">{new Date(e.occurredAt).toLocaleString('ru-RU', { day: '2-digit', month: 'long', hour: '2-digit', minute: '2-digit' })} · {e.kind}</div><h3>{e.title}</h3><p>{e.body}</p></div></article>)}</div> : <div className="empty-state">У Миры пока нет истории между разговорами.</div>}</section>}
-    <footer>Мира не притворяется человеком. Её характер, память, телефон и отношения — часть игровой системы.</footer>
-  </section></main>;
+  useEffect(() => { void hydrate(); const last = Number(localStorage.getItem(LAST_SEEN_KEY) || 0), prevEvent = Number(localStorage.getItem(LAST_EVENT_KEY) || 0), away = last ? (Date.now() - last) / 36e5 : 0; localStorage.setItem(LAST_SEEN_KEY, String(Date.now())); if (away >= .5 && Date.now() - prevEvent >= 6 * 36e5) fetch('/api/mira/proactive', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ state: loadState(), history: [], hoursAway: away, playerId: playerId() }) }).then(r => r.json()).then(data => { const e = data?.event; if (!e?.reply) return; setChat(c => [...c, { role: 'mira', text: e.reply, event: true }]); const p = [...loadJson<PhoneMessage[]>(PHONE_KEY, []), { id: uid(), direction: 'mira' as const, body: e.reply, kind: 'proactive', createdAt: Date.now() }]; persistPhone(p); void savePhone(p); const base = loadState(); persist({ ...base, trust: Math.max(-10, Math.min(10, base.trust + Number(e.trustDelta || 0))), closeness: Math.max(-10, Math.min(10, base.closeness + Number(e.closenessDelta || 0))), tension: Math.max(0, Math.min(10, base.tension + Number(e.tensionDelta || 0))), mood: moods.includes(e.mood) ? e.mood : base.mood, memories: typeof e.memory === 'string' && e.memory.trim() ? [...base.memories, { text: e.memory.trim(), createdAt: Date.now() }].slice(-30) : base.memories }); localStorage.setItem(LAST_EVENT_KEY, String(Date.now())); }).catch(() => {}); const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => { if (session?.user) { setIdentity(session.user.email ? 'account' : 'device'); void saveRemote(loadState()); } }); return () => listener.subscription.unsubscribe(); }, []);
+  const rel = useMemo(() => relationship(state), [state]); const moodLabel = { calm: 'спокойна', warm: 'теплеет', playful: 'играет', sad: 'грустит', curious: 'заинтересована', guarded: 'осторожна' }[state.mood]; const unread = phone.filter(m => m.direction === 'mira' && !m.readAt).length;
+  async function send() { const text = input.trim(); if (!text || busy) return; setInput(''); setBusy(true); setChat(c => [...c, { role: 'user', text }]); const basePhone = loadJson<PhoneMessage[]>(PHONE_KEY, []), pm: PhoneMessage = { id: uid(), direction: 'player', body: text, kind: 'message', createdAt: Date.now() }, after = [...basePhone, pm]; persistPhone(after); void savePhone(after); try { const res = await fetch('/api/mira', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: text, state, history: chat.slice(-8), playerId: playerId() }) }); const data = await res.json(); const reply = data.reply || 'Я слушаю.'; setChat(c => [...c, { role: 'mira', text: reply }]); const afterReply = [...after, { id: uid(), direction: 'mira' as const, body: reply, kind: 'message', createdAt: Date.now() }]; persistPhone(afterReply); void savePhone(afterReply); const effects = data.effects || {}; persist({ ...state, trust: Math.max(-10, Math.min(10, state.trust + Number(effects.trustDelta || 0))), closeness: Math.max(-10, Math.min(10, state.closeness + Number(effects.closenessDelta || 0))), tension: Math.max(0, Math.min(10, state.tension + Number(effects.tensionDelta || 0))), mood: moods.includes(effects.mood) ? effects.mood : state.mood, memories: typeof data.memory === 'string' && data.memory.trim() ? [...state.memories, { text: data.memory.trim(), createdAt: Date.now() }].slice(-30) : state.memories }); void saveRemote(loadState()); } catch { setChat(c => [...c, { role: 'mira', text: 'Связь прервалась на секунду. Но разговор не потерян.' }]); } finally { setBusy(false); } }
+  async function openPhone() { setPanel('phone'); const now = new Date().toISOString(); const next = phone.map(m => m.direction === 'mira' ? { ...m, readAt: m.readAt || now } : m); persistPhone(next); const { data: { session } } = await supabase.auth.getSession(); if (session?.user) await supabase.from('mira_phone_messages').update({ read_at: now }).eq('user_id', session.user.id).is('read_at', null); }
+  async function createLife() { const res = await fetch('/api/mira/life', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ state, recentEvents: life.slice(-5) }) }); const data = await res.json(); if (!data?.event) return; const e = data.event; persistLife([...life, { id: uid(), title: e.title, body: e.body, kind: e.kind, mood: moods.includes(e.mood) ? e.mood : state.mood, occurredAt: Date.now() }]); setPanel('life'); }
+  async function linkEmail() { const email = emailInput.trim(); if (!email.includes('@')) return; const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: `${window.location.origin}/mira` } }); if (!error) { setEmailSent(true); setEmailInput(''); } }
+  const miraPane = <aside className="mira-pane"><div className="mira-top"><div><span className="eyebrow">BETWEEN US / MIRA</span><h1>Мира</h1><p>Помнит тебя · {moodLabel}</p></div><div className="rel"><strong>{Math.round(rel)}</strong><span>связь</span></div></div><div className="relationship-line"><span style={{ width: `${rel}%` }} /></div><div className="mira-tabs"><button className={panel === 'chat' ? 'active' : ''} onClick={() => setPanel('chat')}>Разговор</button><button className={panel === 'phone' ? 'active' : ''} onClick={openPhone}>Телефон{unread > 0 && <b>{unread}</b>}</button><button className={panel === 'life' ? 'active' : ''} onClick={() => setPanel('life')}>Её жизнь</button></div>{panel === 'chat' && <><div className="chat">{chat.map((m, i) => <div key={i} className={`bubble ${m.role} ${m.event ? 'event' : ''}`}>{m.event && <small>Мира написала первой</small>}{m.text}</div>)}{busy && <div className="bubble mira typing">Мира печатает…</div>}</div><div className="composer"><textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }} placeholder="Напиши Мире…" rows={1} /><button onClick={() => void send()} disabled={busy || !input.trim()}>Отправить</button></div></>}{panel === 'phone' && <div className="content-list">{phone.length ? [...phone].reverse().map(m => <article key={m.id} className={`phone-item ${m.direction}`}><small>{m.direction === 'mira' ? 'Мира' : 'Ты'} · {new Date(m.createdAt).toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</small><p>{m.body}</p></article>) : <div className="empty">Пока здесь тихо.</div>}</div>}{panel === 'life' && <div className="content-list"><button className="secondary" onClick={() => void createLife()}>Новый момент её жизни</button>{life.length ? [...life].reverse().map(e => <article className="life-card" key={e.id}><span>{e.kind === 'song' ? '♪' : e.kind === 'place' ? '⌖' : '·'}</span><div><small>{e.kind} · {new Date(e.occurredAt).toLocaleDateString('ru-RU')}</small><h3>{e.title}</h3><p>{e.body}</p></div></article>) : <div className="empty">У Миры ещё нет моментов.</div>}</div>}<div className="identity">{identity === 'account' ? <span>Память привязана к аккаунту</span> : <><span>{identity === 'device' ? 'Память сохранена на устройстве' : 'Локальная память'}</span><div><input value={emailInput} onChange={e => setEmailInput(e.target.value)} placeholder="email для переноса" /><button onClick={() => void linkEmail()}>Привязать</button>{emailSent && <em>Письмо отправлено</em>}</div></>}</div><footer>Мира — вымышленный цифровой персонаж. Её характер, память и отношения — часть игровой системы.</footer></aside>;
+  return <main className="mira-shell"><div className="mobile-switch"><button className={mobileView === 'story' ? 'active' : ''} onClick={() => setMobileView('story')}>История</button><button className={mobileView === 'mira' ? 'active' : ''} onClick={() => setMobileView('mira')}>Мира{unread > 0 && <b>{unread}</b>}</button></div><section className="unified"><div className={`story-pane ${mobileView === 'mira' ? 'mobile-hidden' : ''}`}><div className="story-bar"><strong>BETWEEN US</strong><span>Квест · выбор меняет историю</span><button onClick={() => setStoryKey(k => k + 1)}>↻ Обновить</button></div><iframe key={storyKey} title="BETWEEN US — история" src="/?embedded=1" /></div><div className={`mira-wrap ${mobileView === 'story' ? 'mobile-hidden' : ''}`}>{miraPane}</div></section></main>;
 }
