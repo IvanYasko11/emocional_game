@@ -1,32 +1,37 @@
-# Emocional Game
+# BETWEEN US
 
-Interactive emotional story prototype built with Next.js.
+**BETWEEN US** — короткая интерактивная история о доверии, границах и последствиях выбора.
 
-## Story architecture
+## Что уже есть
 
-Story content is organized as `Chapter` objects containing `Scene` objects. Chapters,
-scenes, and choices use stable IDs, so new content can be inserted without changing a
-player's saved position. A scene advances through `nextSceneId`; the final scene of a
-chapter can instead use `nextChapterId` (on either the scene or its chapter).
+- 12 сцен первого прохождения: примерно 15–20 минут на спокойное прохождение.
+- Три выбора в каждой сцене, влияющие на доверие, напряжение, воспоминания и последующие реплики.
+- Повторное прохождение с сохранёнными решениями первого раза: второй маршрут не просто повторяет текст, а открывает изменённые реакции и сцены.
+- Несколько типов финала, зависящих от поведения игрока.
+- Локальное сохранение прогресса в браузере и миграция старого формата сохранения.
+- Адаптивная мобильная версия, минималистичная кинематографичная подача и нативное «поделиться».
 
-Progress is stored in browser `localStorage` as `between-us-save-v3` with:
+## Архитектура
 
-- `version`
-- `chapterId` and `sceneId`
-- `choices`, keyed by scene ID
-- `memories`, `trust`, and `tension`
+Контент организован как `Chapter → Scene → Choice`. У глав, сцен и вариантов стабильные ID. Переходы используют `nextSceneId` и `nextChapterId`, поэтому новые эпизоды можно добавлять без ломки сохранений.
 
-The client migrates the previous `between-us-save-v2` format on first load. Existing
-story content and presentation are unchanged; the new transition model is ready for a
-future chapter without adding one in this refactor.
+Сохранение: `between-us-save-v3`.
 
-## Run locally
+## Локальный запуск
 
 ```bash
 npm install
 npm run dev
 ```
 
+## Проверка релиза
+
+GitHub Actions автоматически запускает генераторы сюжетных улучшений и `npm run build`. Сюжетные патчи идемпотентны и не применяются повторно.
+
+## Монетизация — следующий этап
+
+Архитектура подготовлена под модель «бесплатный первый эпизод → дополнительные эпизоды/сезоны», а также под добровольные покупки косметики/расширенных маршрутов. Платёжный провайдер и аккаунт пользователя намеренно не зашиваются в клиент без отдельного решения и ключей окружения.
+
 ## Deployment
 
-Optimized for deployment on Vercel with Next.js.
+Проект рассчитан на Vercel/Next.js. Перед публичным запуском необходимо привязать домен/публичный deployment в аккаунте владельца и добавить выбранную аналитику без персонально идентифицирующих данных.
