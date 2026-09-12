@@ -30,6 +30,9 @@ jobs:
       - name: Fix replay save persistence
         if: ${{ !contains(github.event.head_commit.message, '[replay-bot]') }}
         run: python3 scripts/fix-replay-save.py
+      - name: Productize endings
+        if: ${{ !contains(github.event.head_commit.message, '[replay-bot]') }}
+        run: python3 scripts/productize-endings.py
       - name: Build
         run: npm run build
       - name: Commit replay upgrades
@@ -39,5 +42,5 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git add app/page.tsx
           git diff --cached --quiet && exit 0
-          git commit -m "feat: persist replay memory [replay-bot]"
+          git commit -m "feat: productize replay endings [replay-bot]"
           git push
