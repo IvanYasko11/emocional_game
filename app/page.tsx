@@ -458,6 +458,19 @@ export default function Home() {
     setTension(nextTension);
     setMemories(nextMemories);
     save(makeSave({ choices: nextChoices, trust: nextTrust, tension: nextTension, memories: nextMemories }));
+    try {
+      localStorage.setItem('between-us-mira-choice-event-v1', JSON.stringify({
+        id: `${Date.now()}-${choice.id}`,
+        sceneId: current.id,
+        choiceId: choice.id,
+        choiceText: choice.text,
+        response: choice.response,
+        memory: choice.memory,
+        trust: choice.trust,
+        tension: choice.tension,
+        createdAt: Date.now(),
+      }));
+    } catch {}
   }
 
   function continueStory() {
